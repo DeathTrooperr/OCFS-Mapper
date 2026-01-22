@@ -1,5 +1,5 @@
 {
-	"name": "tight-surf-c324",
+	"name": "ocsf-mapper",
 	"version": "0.0.1",
 	"scripts": {
 		"dev": "vite dev",
