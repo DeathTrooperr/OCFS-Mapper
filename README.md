@@ -1,58 +1,57 @@
-# Svelte library
+# OCSF Mapper
 
-Everything you need to build a Svelte library, powered by [`sv`](https://npmjs.com/package/sv).
+> **Note:** This project is in **active development**.
 
-Read more about creating a library [in the docs](https://svelte.dev/docs/kit/packaging).
+OCSF Mapper is a tool designed to help security engineers and developers map arbitrary JSON data (such as logs or events) to the [Open Cybersecurity Framework (OCSF)](https://ocsf.io/) schema. It provides an interactive interface to define mappings and generate code snippets for data transformation.
 
-## Creating a project
+## 🚀 Live Demo
 
-If you're seeing this, you've probably already done this step. Congrats!
+Check out the live version here: [https://ocsf-mapper.northernlight.workers.dev/](https://ocsf-mapper.northernlight.workers.dev/)
 
-```sh
-# create a new project in the current directory
-npx sv create
+## ✨ Features
 
-# create a new project in my-app
-npx sv create my-app
-```
+- **JSON Schema Parsing**: Import your sample JSON to automatically extract fields.
+- **OCSF Integration**: Browse and select OCSF categories and classes.
+- **Interactive Mapping**: Map JSON fields to OCSF attributes with ease.
+- **Conditional Mapping**: Define different OCSF classes based on field values.
+- **Code Generation**: Automatically generate mapping logic for your applications.
+- **Enum Mapping**: Map source values to OCSF enumeration values.
 
-## Developing
+## 🛠️ Development
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+This project is built with [SvelteKit](https://kit.svelte.dev/) and [Tailwind CSS](https://tailwindcss.com/), and it is designed to be deployed on [Cloudflare Workers](https://workers.cloudflare.com/).
 
-```sh
-npm run dev
+### Prerequisites
 
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
+- Node.js
+- npm
 
-Everything inside `src/lib` is part of your library, everything inside `src/routes` can be used as a showcase or preview app.
+### Setup
 
-## Building
+1. Install dependencies:
+   ```sh
+   npm install
+   ```
 
-To build your library:
+2. Start the development server:
+   ```sh
+   npm run dev
+   ```
 
-```sh
-npm pack
-```
+3. Open your browser to `http://localhost:5173`.
 
-To create a production version of your showcase app:
+### Building and Deployment
 
+To build the project for production:
 ```sh
 npm run build
 ```
 
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
-
-## Publishing
-
-Go into the `package.json` and give your package the desired name through the `"name"` option. Also consider adding a `"license"` field and point it to a `LICENSE` file which you can create from a template (one popular option is the [MIT license](https://opensource.org/license/mit/)).
-
-To publish your library to [npm](https://www.npmjs.com):
-
+To deploy to Cloudflare Workers using Wrangler:
 ```sh
-npm publish
+npm run deploy
 ```
+
+## 📜 License
+
+See the [LICENSE](LICENSE) file for details.
