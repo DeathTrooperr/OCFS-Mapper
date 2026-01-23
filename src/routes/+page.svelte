@@ -19,6 +19,8 @@
     export let data: PageData;
     $: ocsf = (data as any).ocsf as OCSFSchemaData;
 
+    const ENABLE_AI_ASSISTANT = false;
+
     let jsonInput = '';
     let schemaFields: SchemaField[] = [];
     let selectedCategory = '';
@@ -217,6 +219,7 @@
             onDelete={deleteMap}
             onClear={clearCurrentMap}
             onShowAI={() => showPromptModal = true}
+            enableAI={ENABLE_AI_ASSISTANT}
         />
 
         <StepWizard 
@@ -227,7 +230,7 @@
 
         <div class="min-h-[500px]">
             {#if currentStep === 0}
-                <JSONInputStep bind:jsonInput />
+                <JSONInputStep bind:jsonInput enableAI={ENABLE_AI_ASSISTANT} />
             {:else if currentStep === 1}
                 <SourceFieldsStep bind:schemaFields />
             {:else if currentStep === 2}
@@ -283,10 +286,12 @@
     </div>
 </main>
 
-<AIModal 
-    bind:show={showPromptModal}
-    prompt={generateOCSFPrompt()}
-    bind:aiInput={aiPromptInput}
-    onApply={parseAIPromptHandler}
-    onClose={() => showPromptModal = false}
-/>
+{#if ENABLE_AI_ASSISTANT}
+    <AIModal 
+        bind:show={showPromptModal}
+        prompt={generateOCSFPrompt()}
+        bind:aiInput={aiPromptInput}
+        onApply={parseAIPromptHandler}
+        onClose={() => showPromptModal = false}
+    />
+{/if}

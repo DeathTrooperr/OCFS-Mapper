@@ -6,6 +6,7 @@
     export let onDelete: (id: string) => void;
     export let onClear: () => void;
     export let onShowAI: () => void;
+    export let enableAI = false;
 
     let showSavedIndicator = false;
     let indicatorTimer: any;
@@ -35,15 +36,17 @@
     
     <div class="flex flex-col gap-4 min-w-0">
         <div class="flex flex-wrap items-center lg:justify-end gap-3">
-            <button 
-                on:click={onShowAI}
-                class="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-purple-900/20 flex items-center gap-2 group"
-            >
-                <svg class="w-4 h-4 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                AI Assist
-            </button>
+            {#if enableAI}
+                <button 
+                    on:click={onShowAI}
+                    class="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-purple-900/20 flex items-center gap-2 group"
+                >
+                    <svg class="w-4 h-4 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    AI Assist
+                </button>
+            {/if}
 
             <button 
                 on:click={onClear}
