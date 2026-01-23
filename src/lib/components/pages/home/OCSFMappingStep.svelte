@@ -1,11 +1,12 @@
 <script lang="ts">
     import FieldMappingTable from "./FieldMappingTable.svelte";
-    import type { DeterminingField, SchemaField } from "$lib/types";
+    import type { DeterminingField, SchemaField, AttributeMapping } from "$lib/scripts/types/types";
     
     export let data: any;
     export let schemaFields: SchemaField[];
     export let useConditionalClass: boolean;
     export let classDeterminingFields: DeterminingField[];
+    export let mappings: Record<string, AttributeMapping>;
     export let selectedCategory: string;
     export let selectedClass: string;
     export let activeMappingIndex: { fieldIdx: number, mappingIdx: number } | 'default';
@@ -13,13 +14,17 @@
     $: ocsfCategories = Object.values(data.ocsf.categories).sort((a: any, b: any) => a.caption.localeCompare(b.caption));
     $: filteredClasses = (cat: string) => Object.values(data.ocsf.classes).filter((c: any) => c.category === cat || (cat === 'other' && c.name === 'base_event'));
     
-    $: currentMappingFields = activeMappingIndex === 'default' 
-        ? schemaFields 
-        : classDeterminingFields[activeMappingIndex.fieldIdx]?.mappings[activeMappingIndex.mappingIdx]?.schemaFields || [];
+    $: currentMappings = activeMappingIndex === 'default' 
+        ? mappings 
+        : classDeterminingFields[activeMappingIndex.fieldIdx]?.mappings[activeMappingIndex.mappingIdx]?.mappings || {};
 
     $: currentClass = activeMappingIndex === 'default'
         ? data.ocsf.classes[selectedClass]
         : (typeof activeMappingIndex === 'object' ? data.ocsf.classes[classDeterminingFields[activeMappingIndex.fieldIdx]?.mappings[activeMappingIndex.mappingIdx]?.selectedClass] : undefined);
+
+    $: if (!useConditionalClass && activeMappingIndex !== 'default') {
+        activeMappingIndex = 'default';
+    }
 
     function addDeterminingField() {
         classDeterminingFields = [...classDeterminingFields, { name: '', mappings: [] }];
@@ -27,28 +32,45 @@
 
     function removeDeterminingField(idx: number) {
         classDeterminingFields = classDeterminingFields.filter((_, i) => i !== idx);
+        if (typeof activeMappingIndex === 'object') {
+            if (activeMappingIndex.fieldIdx === idx) {
+                activeMappingIndex = 'default';
+            } else if (activeMappingIndex.fieldIdx > idx) {
+                activeMappingIndex = { ...activeMappingIndex, fieldIdx: activeMappingIndex.fieldIdx - 1 };
+            }
+        }
     }
 
     function addMapping(fieldIdx: number) {
-        const field = classDeterminingFields[fieldIdx];
         const newMapping = { 
             enumValue: '', 
             selectedCategory: '', 
             selectedClass: '',
-            schemaFields: JSON.parse(JSON.stringify(schemaFields))
+            mappings: {}
         };
-        field.mappings = [...field.mappings, newMapping];
-        activeMappingIndex = { fieldIdx, mappingIdx: field.mappings.length - 1 };
+        classDeterminingFields[fieldIdx].mappings = [...classDeterminingFields[fieldIdx].mappings, newMapping];
+        classDeterminingFields = [...classDeterminingFields];
+        activeMappingIndex = { fieldIdx, mappingIdx: classDeterminingFields[fieldIdx].mappings.length - 1 };
     }
 
     function removeMapping(fieldIdx: number, mappingIdx: number) {
-        const field = classDeterminingFields[fieldIdx];
         const isActive = typeof activeMappingIndex === 'object' && activeMappingIndex.fieldIdx === fieldIdx && activeMappingIndex.mappingIdx === mappingIdx;
-        field.mappings = field.mappings.filter((_, j) => mappingIdx !== j);
+        
+        classDeterminingFields[fieldIdx].mappings = classDeterminingFields[fieldIdx].mappings.filter((_, j) => mappingIdx !== j);
+        classDeterminingFields = [...classDeterminingFields];
+
         if (isActive) {
             activeMappingIndex = 'default';
         } else if (typeof activeMappingIndex === 'object' && activeMappingIndex.fieldIdx === fieldIdx && activeMappingIndex.mappingIdx > mappingIdx) {
             activeMappingIndex = { ...activeMappingIndex, mappingIdx: activeMappingIndex.mappingIdx - 1 };
+        }
+    }
+
+    function handleMappingChange() {
+        if (activeMappingIndex === 'default') {
+            mappings = { ...mappings };
+        } else {
+            classDeterminingFields = [...classDeterminingFields];
         }
     }
 </script>
@@ -141,7 +163,7 @@
                                                         <label class="text-[9px] font-bold text-slate-600 uppercase tracking-widest block mb-1.5">Category</label>
                                                         <select 
                                                             bind:value={mapping.selectedCategory} 
-                                                            on:change={() => mapping.selectedClass = ''}
+                                                            on:change={() => { mapping.selectedClass = ''; handleMappingChange(); }}
                                                             class="w-full bg-slate-900 border border-slate-800 text-[11px] p-2 rounded-lg outline-none text-slate-300"
                                                         >
                                                             <option value="">Category</option>
@@ -153,7 +175,11 @@
                                                     </div>
                                                     <div>
                                                         <label class="text-[9px] font-bold text-slate-600 uppercase tracking-widest block mb-1.5">Class</label>
-                                                        <select bind:value={mapping.selectedClass} class="w-full bg-slate-900 border border-slate-800 text-[11px] p-2 rounded-lg outline-none text-slate-300">
+                                                        <select 
+                                                            bind:value={mapping.selectedClass} 
+                                                            on:change={handleMappingChange}
+                                                            class="w-full bg-slate-900 border border-slate-800 text-[11px] p-2 rounded-lg outline-none text-slate-300"
+                                                        >
                                                             <option value="">Class</option>
                                                             {#each filteredClasses(mapping.selectedCategory).sort((a,b) => a.caption.localeCompare(b.caption)) as cls}
                                                                 <option value={cls.name}>{cls.caption}</option>
@@ -219,12 +245,16 @@
         </div>
     </section>
     
-    {#if selectedClass && currentClass}
+    {#if currentClass}
         <section class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden p-8 animate-in slide-in-from-top-4 duration-500">
             <FieldMappingTable 
-                fields={currentMappingFields}
+                {schemaFields}
                 targetClass={currentClass}
                 title={useConditionalClass && activeMappingIndex !== 'default' ? 'Conditional Mapping' : 'Default Mapping'}
+                mappings={currentMappings}
+                defaultMappings={mappings}
+                isDefault={activeMappingIndex === 'default'}
+                on:change={handleMappingChange}
             />
         </section>
     {/if}

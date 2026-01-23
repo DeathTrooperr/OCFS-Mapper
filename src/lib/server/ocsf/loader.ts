@@ -5,6 +5,7 @@ export interface OCSFAttribute {
     description: string;
     type: string;
     is_array?: boolean;
+    requirement?: string;
     enum?: Record<string, { caption: string; description?: string }>;
 }
 
@@ -194,6 +195,7 @@ export class OCSFSchema {
             description: merged.description || '',
             type: merged.type || 'string_t',
             is_array: merged.is_array,
+            requirement: merged.requirement,
             enum: enumData
         };
     }

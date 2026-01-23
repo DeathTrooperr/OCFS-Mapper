@@ -2,16 +2,19 @@ export interface SchemaField {
     name: string;
     type: string;
     enumValues: string;
-    mappedTo: string;
+}
+
+export interface AttributeMapping {
+    sourceField?: string;
+    staticValue?: string;
     enumMapping: Record<string, string>;
-    showEnumMapping?: boolean;
 }
 
 export interface ClassMapping {
     enumValue: string;
     selectedCategory: string;
     selectedClass: string;
-    schemaFields: SchemaField[];
+    mappings: Record<string, AttributeMapping>;
 }
 
 export interface DeterminingField {
@@ -27,6 +30,7 @@ export interface SavedMap {
     schemaFields: SchemaField[];
     selectedCategory: string;
     selectedClass: string;
+    mappings: Record<string, AttributeMapping>;
     useConditionalClass: boolean;
     classDeterminingFields: DeterminingField[];
     // Legacy fields for migration
@@ -40,6 +44,7 @@ export interface OCSFAttribute {
     type: string;
     description?: string;
     is_array?: boolean;
+    requirement?: string;
     enum?: Record<string, { caption: string; description?: string }>;
 }
 

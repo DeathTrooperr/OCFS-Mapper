@@ -1,4 +1,4 @@
-import type { SchemaField, DeterminingField } from './types.js';
+import type { SchemaField, DeterminingField, AttributeMapping } from '$lib/scripts/types/types.ts';
 
 export function generateOCSFPrompt(ocsfCategories: any[], ocsfClasses: any, ocsfDictionary: any, ocsfProfiles: any) {
     const categoriesStr = ocsfCategories.map(c => `- ${c.caption} (${c.name}): ${c.description}`).join('\n');
@@ -124,6 +124,7 @@ export function parseAIPrompt(
         : [];
 
     let resultSchemaFields: SchemaField[] = [];
+    let resultMappings: Record<string, AttributeMapping> = {};
     let resultSelectedCategory = '';
     let resultSelectedClass = '';
     let resultActiveMappingIndex: { fieldIdx: number, mappingIdx: number } | 'default' = 'default';
@@ -202,11 +203,16 @@ export function parseAIPrompt(
         const fields: SchemaField[] = mappings.map(m => ({
             name: m.path,
             type: (m.type === 'enum' || Object.keys(m.enumMap).length > 0) ? 'enum' : (m.type === 'number' || m.type === 'integer' ? 'number' : 'string'),
-            enumValues: Object.keys(m.enumMap).join(', '),
-            mappedTo: m.target,
-            enumMapping: m.enumMap,
-            showEnumMapping: Object.keys(m.enumMap).length > 0
+            enumValues: Object.keys(m.enumMap).join(', ')
         }));
+
+        const mappingObj: Record<string, AttributeMapping> = {};
+        mappings.forEach(m => {
+            mappingObj[m.target] = {
+                sourceField: m.path,
+                enumMapping: m.enumMap
+            };
+        });
 
         const isDefault = !useConditionalClass || (Object.keys(conditionValues).length === 0) || (Object.values(conditionValues)[0] === 'default');
 
@@ -214,6 +220,7 @@ export function parseAIPrompt(
             resultSelectedCategory = resolvedCategory;
             resultSelectedClass = resolvedClass;
             resultSchemaFields = fields;
+            resultMappings = mappingObj;
             resultActiveMappingIndex = 'default';
         } else {
             Object.entries(conditionValues).forEach(([fName, fVal]) => {
@@ -223,7 +230,7 @@ export function parseAIPrompt(
                         enumValue: fVal,
                         selectedCategory: resolvedCategory,
                         selectedClass: resolvedClass,
-                        schemaFields: fields
+                        mappings: mappingObj
                     });
                     resultActiveMappingIndex = { 
                         fieldIdx: classDeterminingFields.indexOf(field), 
@@ -238,6 +245,7 @@ export function parseAIPrompt(
         useConditionalClass,
         classDeterminingFields,
         schemaFields: resultSchemaFields,
+        mappings: resultMappings,
         selectedCategory: resultSelectedCategory,
         selectedClass: resultSelectedClass,
         activeMappingIndex: resultActiveMappingIndex

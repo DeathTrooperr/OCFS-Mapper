@@ -1,4 +1,4 @@
-import type { SchemaField, DeterminingField, OCSFSchemaData } from './types.js';
+import type { SchemaField, DeterminingField, OCSFSchemaData, AttributeMapping } from '$lib/scripts/types/types.ts';
 
 export function parseSchema(jsonInput: string): SchemaField[] {
     try {
@@ -12,10 +12,7 @@ export function parseSchema(jsonInput: string): SchemaField[] {
                 fields.push({
                     name: path,
                     type: type,
-                    enumValues: '',
-                    mappedTo: '',
-                    enumMapping: {},
-                    showEnumMapping: false
+                    enumValues: ''
                 });
                 if (type === 'object' && value !== null) {
                     traverse(value, path);
@@ -37,23 +34,41 @@ export function generateCodeSnippet(
     selectedClass: string,
     useConditionalClass: boolean,
     classDeterminingFields: DeterminingField[],
-    ocsfData: OCSFSchemaData
+    ocsfData: OCSFSchemaData,
+    defaultMappings: Record<string, AttributeMapping>
 ) {
-    const getMappingForFields = (fields: SchemaField[], targetClass: any) => {
-        return fields.reduce((acc, field) => {
-            if (field.mappedTo) {
-                const targetAttr = (field.mappedTo === 'unmapped' || !targetClass)
-                    ? { enum: false } 
-                    : targetClass.attributes[field.mappedTo];
+    const getMappingsForClass = (mappings: Record<string, AttributeMapping>, targetClass: any, baseMappings?: Record<string, AttributeMapping>) => {
+        const result: Record<string, any> = {};
+        if (!targetClass) return result;
+
+        const allPaths = new Set([...Object.keys(mappings), ...Object.keys(baseMappings || {})]);
+
+        for (const path of allPaths) {
+            const m = mappings[path];
+            const bm = baseMappings?.[path];
+
+            let effectiveSource = m?.sourceField;
+            let effectiveStatic = m?.staticValue;
+            let effectiveEnumMapping = m?.enumMapping ? { ...m.enumMapping } : undefined;
+
+            if (!effectiveSource && effectiveStatic === undefined && bm) {
+                effectiveSource = bm.sourceField;
+                effectiveStatic = bm.staticValue;
+                effectiveEnumMapping = bm.enumMapping ? { ...bm.enumMapping } : undefined;
+            }
+
+            if (effectiveSource || effectiveStatic !== undefined) {
+                const targetAttr = targetClass.attributes[path];
                 const isEnum = !!(targetAttr && targetAttr.enum);
-                acc[field.name] = {
-                    target: field.mappedTo,
-                    enumMapping: field.enumMapping,
+                result[path] = {
+                    source: effectiveSource,
+                    static: effectiveStatic,
+                    enumMapping: effectiveEnumMapping,
                     isEnum: isEnum
                 };
             }
-            return acc;
-        }, {} as Record<string, any>);
+        }
+        return result;
     };
 
     const generateInterfaces = (classNames: string[]) => {
@@ -190,19 +205,19 @@ export function generateCodeSnippet(
         typeDefinitions = generateInterfaces(classesToInclude);
         returnType = classesToInclude.map(c => `OCSF${c.split('_').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('')}`).join(' | ') || 'any';
 
-        const defaultMapping = getMappingForFields(schemaFields, ocsfData.classes[selectedClass]);
+        const defaultMappingObj = getMappingsForClass(defaultMappings, ocsfData.classes[selectedClass]);
         
         const conditionalMappings = classDeterminingFields.flatMap(f => 
             f.mappings.map(m => ({
                 field: f.name,
                 value: m.enumValue,
-                mapping: getMappingForFields(m.schemaFields, ocsfData.classes[m.selectedClass]),
+                mapping: getMappingsForClass(m.mappings, ocsfData.classes[m.selectedClass], defaultMappings),
                 className: m.selectedClass,
                 categoryName: m.selectedCategory
             }))
         );
 
-        mappingDeclaration = `const mappings = ${JSON.stringify({ default: defaultMapping, conditionals: conditionalMappings }, null, 4)};`;
+        mappingDeclaration = `const mappings = ${JSON.stringify({ default: defaultMappingObj, conditionals: conditionalMappings }, null, 4)};`;
 
         classLogic = `
     let selectedClass = "${selectedClass}";
@@ -226,7 +241,7 @@ export function generateCodeSnippet(
         typeDefinitions = generateInterfaces([selectedClass]);
         returnType = selectedClass ? `OCSF${selectedClass.split('_').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('')}` : 'any';
 
-        const mappingObj = getMappingForFields(schemaFields, ocsfData.classes[selectedClass]);
+        const mappingObj = getMappingsForClass(defaultMappings, ocsfData.classes[selectedClass]);
         mappingDeclaration = `const mapping = ${JSON.stringify(mappingObj, null, 4)};`;
         classLogic = `
     output.class_name = "${selectedClass}";
@@ -286,22 +301,28 @@ export function parseToOCSF(input: InputSchema): ${returnType} {
         target[last] = value;
     }
     
-    for (const [path, fieldMapping] of Object.entries(mapping)) {
-        const value = getNestedValue(input, path);
-        if (value !== undefined && value !== null) {
-            let val = value;
-            if ((fieldMapping as any).enumMapping && Object.keys((fieldMapping as any).enumMapping).length > 0) {
+    for (const [ocsfPath, fieldMapping] of Object.entries(mapping)) {
+        let val: any;
+        const m = fieldMapping as any;
+        if (m.static !== undefined && m.static !== null) {
+            val = m.static;
+        } else if (m.source) {
+            val = getNestedValue(input, m.source);
+        }
+
+        if (val !== undefined && val !== null) {
+            if (m.enumMapping && Object.keys(m.enumMapping).length > 0) {
                 if (Array.isArray(val)) {
                     val = val.map(v => {
-                        const mapped = (fieldMapping as any).enumMapping[String(v)];
-                        return (mapped !== undefined && mapped !== '') ? ((fieldMapping as any).isEnum ? Number(mapped) : mapped) : v;
+                        const mapped = m.enumMapping[String(v)];
+                        return (mapped !== undefined && mapped !== '') ? (m.isEnum ? Number(mapped) : mapped) : v;
                     });
                 } else {
-                    const mapped = (fieldMapping as any).enumMapping[String(val)];
-                    val = (mapped !== undefined && mapped !== '') ? ((fieldMapping as any).isEnum ? Number(mapped) : mapped) : val;
+                    const mapped = m.enumMapping[String(val)];
+                    val = (mapped !== undefined && mapped !== '') ? (m.isEnum ? Number(mapped) : mapped) : val;
                 }
             }
-            setNestedValue(output, (fieldMapping as any).target, val);
+            setNestedValue(output, ocsfPath, val);
         }
     }
     

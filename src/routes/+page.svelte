@@ -7,7 +7,7 @@
     import OCSFMappingStep from "$lib/components/pages/home/OCSFMappingStep.svelte";
     import ExportStep from "$lib/components/pages/home/ExportStep.svelte";
     import AIModal from "$lib/components/pages/home/AIModal.svelte";
-    import type { DeterminingField, SchemaField, SavedMap, ClassMapping, OCSFSchemaData, OCSFClass, OCSFCategory } from "$lib/scripts/types/types";
+    import type { DeterminingField, SchemaField, SavedMap, ClassMapping, OCSFSchemaData, OCSFClass, OCSFCategory, AttributeMapping } from "$lib/scripts/types/types";
     import { parseSchema, generateCodeSnippet } from "$lib/scripts/pages/home/mapping-utils";
     import { generateOCSFPrompt as createOCSFPrompt, parseAIPrompt } from "$lib/scripts/pages/home/ai-utils";
     import { loadRecentMaps, saveMap, deleteMapFromStorage } from "$lib/scripts/pages/home/persistence";
@@ -22,6 +22,7 @@
     let selectedCategory = '';
     let selectedClass = '';
     let useConditionalClass = false;
+    let mappings: Record<string, AttributeMapping> = {};
     let activeMappingIndex: { fieldIdx: number, mappingIdx: number } | 'default' = 'default';
     let classDeterminingFields: DeterminingField[] = [];
     let generatedCode = '';
@@ -32,14 +33,6 @@
     $: ocsfCategories = Object.values(ocsf?.categories || {}).sort((a, b) => a.caption.localeCompare(b.caption));
     $: filteredClasses = (cat: string) => Object.values(ocsf?.classes || {}).filter(c => c.category === cat || (cat === 'other' && c.name === 'base_event'));
     
-    $: currentMappingFields = activeMappingIndex === 'default' 
-        ? schemaFields 
-        : classDeterminingFields[activeMappingIndex.fieldIdx]?.mappings[activeMappingIndex.mappingIdx]?.schemaFields || [];
-
-    $: currentClass = activeMappingIndex === 'default'
-        ? ocsf?.classes[selectedClass]
-        : (typeof activeMappingIndex === 'object' ? ocsf?.classes[classDeterminingFields[activeMappingIndex.fieldIdx]?.mappings[activeMappingIndex.mappingIdx]?.selectedClass] : undefined);
-
 
     let showPromptModal = false;
     let aiPromptInput = '';
@@ -77,7 +70,7 @@
                 ...field,
                 mappings: field.mappings.map((m: ClassMapping) => ({
                     ...m,
-                    schemaFields: JSON.parse(JSON.stringify(schemaFields))
+                    mappings: m.mappings || {}
                 }))
             }));
             currentStep = 1;
@@ -93,15 +86,16 @@
             selectedClass,
             useConditionalClass,
             classDeterminingFields,
-            data.ocsf
+            data.ocsf,
+            mappings
         );
     }
 
     // --- Persistence Logic ---
-
     let recentMaps: SavedMap[] = [];
     let isInitialLoad = true;
     let currentMapName = '';
+    let currentMapId = '';
 
     onMount(() => {
         recentMaps = loadRecentMaps();
@@ -113,29 +107,41 @@
 
     function saveCurrentMap() {
         recentMaps = saveMap({
+            id: currentMapId,
             name: currentMapName,
             jsonInput,
             schemaFields,
             selectedCategory,
             selectedClass,
             useConditionalClass,
+            mappings,
             classDeterminingFields
         });
         
-        // Update current name if it was empty
-        if (!currentMapName && recentMaps.length > 0) {
-            currentMapName = recentMaps[0].name;
+        // Update current name and ID from the saved map (it might have been auto-named or assigned a new ID)
+        if (recentMaps.length > 0) {
+            // Find the map we just saved in the recent list
+            const savedMap = currentMapId 
+                ? recentMaps.find(m => m.id === currentMapId) 
+                : recentMaps[0]; // If it was new, it will be at the top
+
+            if (savedMap) {
+                currentMapName = savedMap.name;
+                currentMapId = savedMap.id;
+            }
         }
     }
 
     function loadMap(map: SavedMap) {
         if (!map) return;
+        currentMapId = map.id;
         currentMapName = map.name;
         jsonInput = map.jsonInput;
         schemaFields = map.schemaFields;
         selectedCategory = map.selectedCategory;
         selectedClass = map.selectedClass;
         useConditionalClass = map.useConditionalClass;
+        mappings = map.mappings || {};
         classDeterminingFields = map.classDeterminingFields;
         
         // Reset state for the loaded map
@@ -149,6 +155,9 @@
     function deleteMap(id: string) {
         if (confirm('Are you sure you want to delete this map?')) {
             recentMaps = deleteMapFromStorage(id);
+            if (currentMapId === id) {
+                clearCurrentMap();
+            }
         }
     }
 
@@ -158,8 +167,10 @@
         selectedCategory = '';
         selectedClass = '';
         useConditionalClass = false;
+        mappings = {};
         classDeterminingFields = [];
         currentMapName = '';
+        currentMapId = '';
         activeMappingIndex = 'default';
         currentStep = 0;
     }
@@ -169,29 +180,11 @@
         handleParseSchema();
     }
 
-    function handleFieldChange(event: CustomEvent<SchemaField[]>) {
-        if (activeMappingIndex === 'default') {
-            schemaFields = event.detail;
-        } else {
-            classDeterminingFields[activeMappingIndex.fieldIdx].mappings[activeMappingIndex.mappingIdx].schemaFields = event.detail;
-            classDeterminingFields = [...classDeterminingFields];
-        }
-    }
-
-    function handleOCSFChange(event: CustomEvent<{category: string, class: string}>) {
-        if (activeMappingIndex === 'default') {
-            selectedCategory = event.detail.category;
-            selectedClass = event.detail.class;
-        } else {
-            const mapping = classDeterminingFields[activeMappingIndex.fieldIdx].mappings[activeMappingIndex.mappingIdx];
-            mapping.selectedCategory = event.detail.category;
-            mapping.selectedClass = event.detail.class;
-            classDeterminingFields = [...classDeterminingFields];
-        }
-    }
-
     let autoSaveTimer: any;
-    $: if (!isInitialLoad && typeof window !== 'undefined' && (jsonInput || schemaFields.length > 0)) {
+    $: if (!isInitialLoad && typeof window !== 'undefined' && currentStep >= 1 && (jsonInput || schemaFields.length > 0)) {
+        // Dependency tracking for auto-save
+        jsonInput; schemaFields; selectedCategory; selectedClass; useConditionalClass; classDeterminingFields; mappings;
+        
         if (autoSaveTimer) clearTimeout(autoSaveTimer);
         autoSaveTimer = setTimeout(() => {
             saveCurrentMap();
@@ -207,6 +200,7 @@
             onSave={saveCurrentMap}
             onLoad={loadMap}
             onDelete={deleteMap}
+            onClear={clearCurrentMap}
             onShowAI={() => showPromptModal = true}
         />
 
@@ -227,6 +221,7 @@
                     bind:schemaFields
                     bind:useConditionalClass
                     bind:classDeterminingFields
+                    bind:mappings
                     bind:selectedCategory
                     bind:selectedClass
                     bind:activeMappingIndex
