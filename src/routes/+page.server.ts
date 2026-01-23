@@ -1,13 +1,12 @@
-import { OCSFSchema } from '../lib/ocsf/loader';
+import { OCSFSchema } from '../lib/server/ocsf/loader.js';
 
 export const load = async () => {
-    const rawFiles = import.meta.glob('$lib/ocsf/data/**/*.json', { eager: true });
+    const rawFiles = import.meta.glob('../lib/server/ocsf/data/**/*.json', { eager: true });
     
     const files: Record<string, any> = {};
     for (const [path, content] of Object.entries(rawFiles)) {
-        // Clean up the path to be relative to $lib/ocsf/data
-        const cleanPath = path.replace('/src/lib/ocsf/data/', '');
-        files[cleanPath] = content;
+        const cleanPath = path.split('/data/').pop() || path;
+        files[cleanPath] = (content as any).default || content;
     }
 
     const loader = new OCSFSchema(files);
