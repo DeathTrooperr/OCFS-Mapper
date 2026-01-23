@@ -6,6 +6,7 @@
     import SourceFieldsStep from "$lib/components/pages/home/SourceFieldsStep.svelte";
     import OCSFMappingStep from "$lib/components/pages/home/OCSFMappingStep.svelte";
     import ExportStep from "$lib/components/pages/home/ExportStep.svelte";
+    import DownloadStep from "$lib/components/pages/home/DownloadStep.svelte";
     import AIModal from "$lib/components/pages/home/AIModal.svelte";
     import type { DeterminingField, SchemaField, SavedMap, ClassMapping, OCSFSchemaData, OCSFClass, OCSFCategory, AttributeMapping } from "$lib/scripts/types/types";
     import { parseSchema, generateCodeSnippet } from "$lib/scripts/pages/home/mapping-utils";
@@ -26,9 +27,10 @@
     let activeMappingIndex: { fieldIdx: number, mappingIdx: number } | 'default' = 'default';
     let classDeterminingFields: DeterminingField[] = [];
     let generatedCode = '';
+    let generatedTypes = '';
 
     let currentStep = 0;
-    const steps = ["Input", "Schema", "Mapping", "Export"];
+    const steps = ["Input", "Schema", "Mapping", "Export", "Download"];
 
     $: ocsfCategories = Object.values(ocsf?.categories || {}).sort((a, b) => a.caption.localeCompare(b.caption));
     $: filteredClasses = (cat: string) => Object.values(ocsf?.classes || {}).filter(c => c.category === cat || (cat === 'other' && c.name === 'base_event'));
@@ -80,7 +82,7 @@
     }
 
     function handleGenerateCode() {
-        generatedCode = generateCodeSnippet(
+        const result = generateCodeSnippet(
             schemaFields,
             selectedCategory,
             selectedClass,
@@ -89,6 +91,8 @@
             data.ocsf,
             mappings
         );
+        generatedCode = result.code;
+        generatedTypes = result.types;
     }
 
     // --- Persistence Logic ---
@@ -231,6 +235,11 @@
                     bind:generatedCode 
                     onGenerate={handleGenerateCode} 
                 />
+            {:else if currentStep === 4}
+                <DownloadStep 
+                    {generatedCode}
+                    {generatedTypes}
+                />
             {/if}
         </div>
 
@@ -268,5 +277,3 @@
     onApply={parseAIPromptHandler}
     onClose={() => showPromptModal = false}
 />
-
-

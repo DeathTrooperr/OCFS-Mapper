@@ -1,4 +1,76 @@
-import type { SchemaField, DeterminingField, OCSFSchemaData, AttributeMapping } from '$lib/scripts/types/types.ts';
+import type { SchemaField, DeterminingField, OCSFSchemaData, AttributeMapping, OCSFAttribute } from '$lib/scripts/types/types.ts';
+
+export const KNOWN_BASE_TYPES = [
+    'integer_t', 'long_t', 'float_t', 'double_t', 'boolean_t', 'timestamp_t',
+    'string_t', 'email_t', 'ip_t', 'mac_t', 'url_t', 'hostname_t',
+    'file_name_t', 'file_path_t', 'bytestring_t', 'ipv4_t', 'ipv6_t',
+    'json_t', 'object_t'
+];
+
+export function isTypeCompatible(attr: OCSFAttribute, schemaField: SchemaField): boolean {
+    if (attr.is_array) {
+        return schemaField.type === 'array';
+    }
+    
+    if (schemaField.type === 'array') {
+        return !!attr.is_array;
+    }
+
+    // Enum compatibility: Enums can be mapped from enum, string, or number source fields
+    if (attr.enum) {
+        return schemaField.type === 'enum' || schemaField.type === 'string' || schemaField.type === 'number';
+    }
+
+    switch (attr.type) {
+        case 'integer_t':
+        case 'long_t':
+        case 'float_t':
+        case 'double_t':
+        case 'timestamp_t':
+            return schemaField.type === 'number';
+        case 'boolean_t':
+            return schemaField.type === 'boolean';
+        case 'string_t':
+        case 'email_t':
+        case 'ip_t':
+        case 'mac_t':
+        case 'url_t':
+        case 'hostname_t':
+        case 'file_name_t':
+        case 'file_path_t':
+        case 'bytestring_t':
+        case 'ipv4_t':
+        case 'ipv6_t':
+            // Allow mapping enum to string-like OCSF attributes
+            return schemaField.type === 'string' || schemaField.type === 'enum';
+        case 'json_t':
+            return true; // json_t can be any type
+        case 'object_t':
+            return schemaField.type === 'object';
+        default:
+            // For OCSF Classes or other types, we expect an object
+            return schemaField.type === 'object';
+    }
+}
+
+export function getTsType(ocsfType: string, attr?: OCSFAttribute, ocsfData?: OCSFSchemaData) {
+    if (attr?.enum) {
+        const keys = Object.keys(attr.enum);
+        if (keys.length > 0) {
+            return keys.map(k => isNaN(Number(k)) ? `"${k}"` : k).join(' | ');
+        }
+    }
+
+    if (ocsfData?.classes[ocsfType]) {
+        return `OCSF${ocsfType.split('_').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('')}`;
+    }
+
+    if (KNOWN_BASE_TYPES.includes(ocsfType)) {
+        return ocsfType;
+    }
+
+    return 'any';
+}
 
 export function parseSchema(jsonInput: string): SchemaField[] {
     try {
@@ -71,9 +143,73 @@ export function generateCodeSnippet(
         return result;
     };
 
-    const generateInterfaces = (classNames: string[]) => {
+    const generateInterfaces = (classNames: string[], includeAll = true) => {
         const interfaces: string[] = [];
         const processedObjects = new Set<string>();
+
+        const baseTypes = `
+/** OCSF Base Types */
+export type integer_t = number;
+export type long_t = number;
+export type float_t = number;
+export type double_t = number;
+export type boolean_t = boolean;
+export type timestamp_t = number;
+export type string_t = string;
+export type email_t = string;
+export type ip_t = string;
+export type mac_t = string;
+export type url_t = string;
+export type hostname_t = string;
+export type file_name_t = string;
+export type file_path_t = string;
+export type bytestring_t = string;
+export type ipv4_t = string;
+export type ipv6_t = string;
+export type json_t = any;
+export type object_t = Record<string, any>;
+`;
+        interfaces.push(baseTypes);
+
+        const getTsTypeInternal = (ocsfType: string, attr?: any) => {
+            return getTsType(ocsfType, attr, ocsfData);
+        };
+
+        const processClass = (className: string) => {
+            const cls = ocsfData.classes[className] as any;
+            if (!cls || processedObjects.has(className)) return;
+            processedObjects.add(className);
+
+            const interfaceName = `OCSF${className.split('_').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('')}`;
+            let interfaceContent = `/** ${cls.caption}: ${(cls.description || '').replace(/\*\//g, '* /')} */\n`;
+            interfaceContent += `export interface ${interfaceName} {\n`;
+            
+            if (cls.category && cls.category !== 'unknown' && cls.category !== 'object') {
+                interfaceContent += `    class_name: "${className}";\n`;
+                interfaceContent += `    category_name: string;\n`;
+            }
+
+            for (const [attrName, attr] of Object.entries(cls.attributes) as [string, any][]) {
+                if (attrName === 'unmapped' || attrName.startsWith('$')) continue;
+                
+                let tsType = getTsTypeInternal(attr.type, attr);
+                if (tsType.startsWith('OCSF') && !tsType.includes(' | ')) {
+                    const targetClass = attr.type;
+                    processClass(targetClass);
+                }
+                
+                if (attr.is_array) {
+                    tsType = `Array<${tsType}>`;
+                }
+                
+                if (attr.description) {
+                    interfaceContent += `    /** ${attr.description.replace(/\*\//g, '* /')} */\n`;
+                }
+                interfaceContent += `    ${attrName}${attr.requirement === 'required' ? '' : '?'}: ${tsType};\n`;
+            }
+            interfaceContent += `}\n`;
+            interfaces.push(interfaceContent);
+        };
 
         const generateInputInterface = () => {
             if (schemaFields.length === 0) return 'export type InputSchema = any;';
@@ -125,72 +261,19 @@ export function generateCodeSnippet(
 
         interfaces.push(generateInputInterface());
 
-        const getTsType = (ocsfType: string) => {
-            switch (ocsfType) {
-                case 'integer_t':
-                case 'long_t':
-                case 'float_t':
-                case 'double_t':
-                    return 'number';
-                case 'boolean_t':
-                    return 'boolean';
-                case 'timestamp_t':
-                    return 'number'; // OCSF timestamps are often Unix epochs
-                case 'string_t':
-                case 'email_t':
-                case 'ip_t':
-                case 'mac_t':
-                case 'url_t':
-                case 'hostname_t':
-                case 'file_name_t':
-                case 'file_path_t':
-                case 'bytestring_t':
-                    return 'string';
-                case 'json_t':
-                    return 'any';
-                case 'object_t':
-                    return 'Record<string, any>';
-                default:
-                    // If it's a known class or object
-                    if (ocsfData.classes[ocsfType]) {
-                        return `OCSF${ocsfType.split('_').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('')}`;
-                    }
-                    return 'any';
+        if (includeAll) {
+            const eventClasses = Object.entries(ocsfData.classes)
+                .filter(([_, cls]) => cls.category && cls.category !== 'unknown' && cls.category !== 'object')
+                .map(([name, _]) => `OCSF${name.split('_').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('')}`);
+            
+            if (eventClasses.length > 0) {
+                interfaces.push(`/** Union of all OCSF Event types */\nexport type AnyOCSFEvent = ${eventClasses.sort().join(' | ')};\n`);
             }
-        };
-
-        const processClass = (className: string) => {
-            const cls = ocsfData.classes[className] as any;
-            if (!cls || processedObjects.has(className)) return;
-            processedObjects.add(className);
-
-            const interfaceName = `OCSF${className.split('_').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('')}`;
-            let interfaceContent = `export interface ${interfaceName} {\n`;
-            if (cls.category !== 'unknown') {
-                interfaceContent += `    class_name: "${className}";\n`;
-                interfaceContent += `    category_name: string;\n`;
-            }
-
-            for (const [attrName, attr] of Object.entries(cls.attributes) as [string, any][]) {
-                if (attrName === 'unmapped') continue;
-                
-                let tsType = getTsType(attr.type);
-                if (tsType === 'any' && ocsfData.classes[attr.type]) {
-                    tsType = `OCSF${attr.type.split('_').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('')}`;
-                    processClass(attr.type);
-                }
-                
-                if (attr.is_array) {
-                    tsType = `${tsType}[]`;
-                }
-                
-                interfaceContent += `    ${attrName}?: ${tsType};\n`;
-            }
-            interfaceContent += `}\n`;
-            interfaces.push(interfaceContent);
-        };
-
-        classNames.forEach(processClass);
+            Object.keys(ocsfData.classes).sort().forEach(processClass);
+        } else {
+            classNames.forEach(processClass);
+        }
+        
         return interfaces.join('\n');
     };
 
@@ -217,116 +300,37 @@ export function generateCodeSnippet(
             }))
         );
 
-        mappingDeclaration = `const mappings = ${JSON.stringify({ default: defaultMappingObj, conditionals: conditionalMappings }, null, 4)};`;
-
-        classLogic = `
-    let selectedClass = "${selectedClass}";
-    let selectedCategory = "${selectedCategory}";
-    let activeMapping = mappings.default;
-    
-    for (const cond of mappings.conditionals) {
-        const actualValue = String(getNestedValue(input, cond.field));
-        if (actualValue === cond.value) {
-            selectedClass = cond.className;
-            selectedCategory = cond.categoryName;
-            activeMapping = cond.mapping;
-            break;
-        }
-    }
-    
-    output.class_name = selectedClass;
-    output.category_name = selectedCategory;
-    const mapping = activeMapping;`;
+        mappingDeclaration = `const config: ParserConfig = ${JSON.stringify({ 
+            defaultMapping: defaultMappingObj, 
+            conditionals: conditionalMappings,
+            selectedClass,
+            selectedCategory
+        }, null, 4)};`;
     } else {
         typeDefinitions = generateInterfaces([selectedClass]);
         returnType = selectedClass ? `OCSF${selectedClass.split('_').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('')}` : 'any';
 
         const mappingObj = getMappingsForClass(defaultMappings, ocsfData.classes[selectedClass]);
-        mappingDeclaration = `const mapping = ${JSON.stringify(mappingObj, null, 4)};`;
-        classLogic = `
-    output.class_name = "${selectedClass}";
-    output.category_name = "${selectedCategory}";`;
+        mappingDeclaration = `const config: ParserConfig = ${JSON.stringify({ 
+            defaultMapping: mappingObj,
+            selectedClass,
+            selectedCategory
+        }, null, 4)};`;
     }
 
-    return `
-${typeDefinitions}
+    return {
+        code: `
+import { parseOCSF, type ParserConfig, type InputSchema, type ${returnType.includes('|') ? 'OCSFEvent' : returnType} } from './ocsf-sdk';
 
-export function parseToOCSF(input: InputSchema): ${returnType} {
-    const output: any = {};
-    ${mappingDeclaration}
-    ${classLogic}
-    
-    function getNestedValue(obj: any, path: string): any {
-        if (!obj) return undefined;
-        if (path.includes('[]')) {
-            const [arrayPath, elementPath] = path.split('[]');
-            const arr = getNestedValue(obj, arrayPath.endsWith('.') ? arrayPath.slice(0, -1) : arrayPath);
-            if (Array.isArray(arr)) {
-                return arr.map(item => getNestedValue(item, elementPath.startsWith('.') ? elementPath.slice(1) : elementPath));
-            }
-            return undefined;
-        }
-        return path.split('.').reduce((acc, part) => acc && acc[part], obj);
-    }
+${mappingDeclaration}
 
-    function setNestedValue(obj: any, path: string, value: any) {
-        if (value === undefined) return;
-        
-        if (path.includes('[]')) {
-            const [arrayPath, elementPath] = path.split('[]');
-            const arrPath = arrayPath.endsWith('.') ? arrayPath.slice(0, -1) : arrayPath;
-            const elemPath = elementPath.startsWith('.') ? elementPath.slice(1) : elementPath;
-            
-            let arr = getNestedValue(obj, arrPath);
-            if (!Array.isArray(arr)) {
-                arr = [];
-                setNestedValue(obj, arrPath, arr);
-            }
-            
-            if (Array.isArray(value)) {
-                value.forEach((v, i) => {
-                    if (!arr[i]) arr[i] = {};
-                    setNestedValue(arr[i], elemPath, v);
-                });
-            }
-            return;
-        }
-
-        const parts = path.split('.');
-        const last = parts.pop()!;
-        const target = parts.reduce((acc, part) => {
-            if (!acc[part]) acc[part] = {};
-            return acc[part];
-        }, obj);
-        target[last] = value;
-    }
-    
-    for (const [ocsfPath, fieldMapping] of Object.entries(mapping)) {
-        let val: any;
-        const m = fieldMapping as any;
-        if (m.static !== undefined && m.static !== null) {
-            val = m.static;
-        } else if (m.source) {
-            val = getNestedValue(input, m.source);
-        }
-
-        if (val !== undefined && val !== null) {
-            if (m.enumMapping && Object.keys(m.enumMapping).length > 0) {
-                if (Array.isArray(val)) {
-                    val = val.map(v => {
-                        const mapped = m.enumMapping[String(v)];
-                        return (mapped !== undefined && mapped !== '') ? (m.isEnum ? Number(mapped) : mapped) : v;
-                    });
-                } else {
-                    const mapped = m.enumMapping[String(val)];
-                    val = (mapped !== undefined && mapped !== '') ? (m.isEnum ? Number(mapped) : mapped) : val;
-                }
-            }
-            setNestedValue(output, ocsfPath, val);
-        }
-    }
-    
-    return output as ${returnType};
+export function parseToOCSF(input: InputSchema): ${returnType.includes('|') ? 'OCSFEvent' : returnType} {
+    return parseOCSF(input, config) as ${returnType.includes('|') ? 'OCSFEvent' : returnType};
 }
-    `.trim();
+        `.trim(),
+        types: `
+${typeDefinitions}
+${returnType.includes('|') ? `export type OCSFEvent = ${returnType};` : ''}
+        `.trim()
+    };
 }

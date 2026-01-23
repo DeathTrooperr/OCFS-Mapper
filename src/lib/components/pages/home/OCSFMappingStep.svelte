@@ -105,7 +105,7 @@
                                     <div class="flex-1 relative">
                                         <select bind:value={field.name} class="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-sm text-slate-300 focus:ring-1 focus:ring-blue-500 outline-none appearance-none">
                                             <option value="">Select Field...</option>
-                                            {#each schemaFields.filter(f => ['enum', 'string', 'number'].includes(f.type)) as sField}
+                                            {#each schemaFields.filter(f => ['enum', 'string', 'number', 'boolean'].includes(f.type)) as sField}
                                                 <option value={sField.name}>{sField.name}</option>
                                             {/each}
                                         </select>
@@ -248,7 +248,7 @@
     {#if currentClass}
         <section class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden p-8 animate-in slide-in-from-top-4 duration-500">
             <FieldMappingTable 
-                {schemaFields}
+                bind:schemaFields
                 targetClass={currentClass}
                 title={useConditionalClass && activeMappingIndex !== 'default' ? 'Conditional Mapping' : 'Default Mapping'}
                 mappings={currentMappings}

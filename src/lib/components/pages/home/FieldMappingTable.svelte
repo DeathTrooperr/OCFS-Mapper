@@ -1,6 +1,7 @@
 <script lang="ts">
     import { createEventDispatcher } from "svelte";
     import type { SchemaField, AttributeMapping } from "$lib/scripts/types/types";
+    import { isTypeCompatible, getTsType } from "$lib/scripts/pages/home/mapping-utils";
     export let schemaFields: SchemaField[];
     export let targetClass: any;
     export let title: string;
@@ -29,7 +30,11 @@
             delete mappings[attrName].staticValue;
         } else if (type === 'field') {
             delete mappings[attrName].staticValue;
-            if (!mappings[attrName].sourceField) mappings[attrName].sourceField = schemaFields[0]?.name || '';
+            if (!mappings[attrName].sourceField) {
+                const attr = targetClass?.attributes[attrName];
+                const compatible = getCompatibleFields(attr);
+                mappings[attrName].sourceField = compatible[0]?.name || '';
+            }
         } else if (type === 'static') {
             delete mappings[attrName].sourceField;
             if (mappings[attrName].staticValue === undefined) mappings[attrName].staticValue = '';
@@ -60,6 +65,7 @@
     };
 
     $: getSourceFieldInfo = (fieldName: string) => schemaFields.find(f => f.name === fieldName);
+    $: getCompatibleFields = (attr: any) => schemaFields.filter(sf => isTypeCompatible(attr, sf));
 </script>
 
 <div class="space-y-4">
@@ -99,7 +105,10 @@
                             {:else if attr.requirement === 'recommended'}
                                 <span class="px-1.5 py-0.5 text-[8px] uppercase font-black bg-blue-900/20 text-blue-500 rounded border border-blue-900/30">Recommended</span>
                             {/if}
-                            <span class="px-2 py-0.5 text-[9px] uppercase font-bold bg-slate-900 text-slate-500 rounded border border-slate-800">{attr.type}</span>
+                            <span class="px-2 py-0.5 text-[9px] uppercase font-bold bg-slate-900 text-slate-500 rounded border border-slate-800">
+                                {attr.type}{attr.is_array ? '[]' : ''}
+                                {#if attr.enum} (Enum){/if}
+                            </span>
                         </div>
                         <div class="text-[10px] text-slate-500 font-mono truncate">{attr.name}</div>
                     </div>
@@ -114,7 +123,9 @@
                             </button>
                             <button 
                                 on:click={() => setSourceType(attr.name, 'field')}
-                                class="px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all {m?.sourceField ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}"
+                                class="px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all {m?.sourceField ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'} disabled:opacity-30 disabled:cursor-not-allowed"
+                                disabled={getCompatibleFields(attr).length === 0}
+                                title={getCompatibleFields(attr).length === 0 ? "No compatible fields found in source" : ""}
                             >
                                 Field
                             </button>
@@ -134,19 +145,33 @@
                                     disabled={isInherited}
                                     class="w-full bg-slate-900 border border-slate-800 text-slate-200 text-sm p-2.5 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none appearance-none transition-all {isInherited ? 'opacity-50' : ''}"
                                 >
-                                    {#each schemaFields as sf}
+                                    {#each getCompatibleFields(attr) as sf}
                                         <option value={sf.name}>{sf.name} ({sf.type})</option>
                                     {/each}
                                 </select>
                             {:else if effective?.staticValue !== undefined}
-                                <input 
-                                    type="text"
-                                    bind:value={mappings[attr.name].staticValue}
-                                    on:input={handleChange}
-                                    disabled={isInherited}
-                                    placeholder="Enter static value..."
-                                    class="w-full bg-slate-900 border border-slate-800 text-slate-200 text-sm p-2.5 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all {isInherited ? 'opacity-50' : ''}"
-                                />
+                                {#if attr.enum}
+                                    <select 
+                                        bind:value={mappings[attr.name].staticValue}
+                                        on:change={handleChange}
+                                        disabled={isInherited}
+                                        class="w-full bg-slate-900 border border-slate-800 text-slate-200 text-sm p-2.5 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none appearance-none transition-all {isInherited ? 'opacity-50' : ''}"
+                                    >
+                                        <option value="">Select OCSF Value...</option>
+                                        {#each Object.entries(attr.enum) as [eVal, eMeta]}
+                                            <option value={eVal}>{eMeta.caption} ({eVal})</option>
+                                        {/each}
+                                    </select>
+                                {:else}
+                                    <input 
+                                        type="text"
+                                        bind:value={mappings[attr.name].staticValue}
+                                        on:input={handleChange}
+                                        disabled={isInherited}
+                                        placeholder="Enter static value..."
+                                        class="w-full bg-slate-900 border border-slate-800 text-slate-200 text-sm p-2.5 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all {isInherited ? 'opacity-50' : ''}"
+                                    />
+                                {/if}
                             {:else}
                                 <div class="w-full bg-slate-900/30 border border-slate-800/50 text-slate-600 text-sm p-2.5 rounded-xl italic">
                                     Not mapped
@@ -204,6 +229,49 @@
                                                 </select>
                                             </div>
                                         {/each}
+
+                                        {#if !isInherited}
+                                            <div class="flex items-center gap-2 bg-slate-900/30 p-1.5 rounded-xl border border-dashed border-slate-800 focus-within:border-blue-500/50 transition-all">
+                                                <input 
+                                                    type="text" 
+                                                    placeholder="Add source value..."
+                                                    class="flex-1 bg-transparent border-none text-[11px] p-1 outline-none text-slate-400 focus:text-slate-200"
+                                                    on:keydown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            e.preventDefault();
+                                                            const val = e.currentTarget.value.trim();
+                                                            if (val && sf) {
+                                                                const currentValues = (sf.enumValues || '').split(/[,\s]+/).filter(v => v.trim() !== '');
+                                                                if (!currentValues.includes(val)) {
+                                                                    sf.enumValues = sf.enumValues ? `${sf.enumValues}, ${val}` : val;
+                                                                    schemaFields = [...schemaFields];
+                                                                }
+                                                                e.currentTarget.value = '';
+                                                            }
+                                                        }
+                                                    }}
+                                                />
+                                                <button 
+                                                    class="p-1 text-slate-500 hover:text-blue-400 transition-colors"
+                                                    on:click={(e) => {
+                                                        const input = e.currentTarget.previousElementSibling;
+                                                        const val = input.value.trim();
+                                                        if (val && sf) {
+                                                            const currentValues = (sf.enumValues || '').split(/[,\s]+/).filter(v => v.trim() !== '');
+                                                            if (!currentValues.includes(val)) {
+                                                                sf.enumValues = sf.enumValues ? `${sf.enumValues}, ${val}` : val;
+                                                                schemaFields = [...schemaFields];
+                                                            }
+                                                            input.value = '';
+                                                        }
+                                                    }}
+                                                >
+                                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        {/if}
                                     </div>
                                 </div>
                             {/if}
