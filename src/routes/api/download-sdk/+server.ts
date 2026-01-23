@@ -2,11 +2,11 @@ import type { RequestHandler } from './$types';
 import JSZip from 'jszip';
 
 // @ts-ignore
-import indexTs from '$lib/server/sdk/index.ts?raw';
+import indexTs from '$lib/sdk/index.ts?raw';
 // @ts-ignore
-import parserTs from '$lib/server/sdk/parser.ts?raw';
+import parserTs from '$lib/sdk/parser.ts?raw';
 // @ts-ignore
-import typesTs from '$lib/server/sdk/types.ts?raw';
+import typesTs from '$lib/sdk/types.ts?raw';
 
 export const POST: RequestHandler = async ({ request }) => {
     try {

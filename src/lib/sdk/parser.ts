@@ -49,6 +49,9 @@ export function setNestedValue(obj: any, path: string, value: any) {
 export function parseOCSF(input: any, config: ParserConfig): any {
     const output: any = {};
     
+    const inputStr = JSON.stringify(input);
+    const inputSize = new TextEncoder().encode(inputStr).length;
+
     let selectedClass = config.selectedClass;
     let selectedCategory = config.selectedCategory;
     let activeMapping = config.defaultMapping;
@@ -73,7 +76,27 @@ export function parseOCSF(input: any, config: ParserConfig): any {
     for (const [ocsfPath, fieldMapping] of Object.entries(activeMapping)) {
         let val: any;
         const m = fieldMapping as AttributeMapping;
-        if (m.static !== undefined && m.static !== null) {
+        
+        // Handle automatic mappings
+        if (m.source === '' && m.static === undefined) {
+            if (ocsfPath === 'raw_data') {
+                val = input;
+            } else if (ocsfPath === 'raw_data_hash') {
+                // Simple hash for demonstration, replace with SHA-256 in production if needed
+                let hash = 0;
+                for (let i = 0; i < inputStr.length; i++) {
+                    hash = ((hash << 5) - hash) + inputStr.charCodeAt(i);
+                    hash |= 0;
+                }
+                val = Math.abs(hash).toString(16).padStart(8, '0');
+            } else if (ocsfPath === 'raw_data_size') {
+                val = inputSize;
+            } else if (ocsfPath === 'observables') {
+                val = undefined; // Handled by automated observables logic
+            } else {
+                val = input; // Default behavior for empty source
+            }
+        } else if (m.static !== undefined && m.static !== null) {
             val = m.static;
         } else if (m.source !== undefined && m.source !== null) {
             val = getNestedValue(input, m.source);

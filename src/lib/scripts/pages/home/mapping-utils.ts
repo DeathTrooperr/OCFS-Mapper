@@ -100,6 +100,147 @@ export function parseSchema(jsonInput: string): SchemaField[] {
     }
 }
 
+export function getMappingsForClass(
+    mappings: Record<string, AttributeMapping>, 
+    targetClass: any, 
+    schemaFields: SchemaField[],
+    baseMappings?: Record<string, AttributeMapping>
+) {
+    const result: Record<string, any> = {};
+    if (!targetClass) return result;
+
+    const allPaths = new Set([...Object.keys(mappings), ...Object.keys(baseMappings || {})]);
+    const mappedSources = new Set<string>();
+
+    for (const path of allPaths) {
+        if (path === 'unmapped' || path === 'raw_data' || path === 'raw_data_hash' || path === 'raw_data_size' || path === 'observables') continue;
+
+        const m = mappings[path];
+        const bm = baseMappings?.[path];
+
+        let effectiveSource = m?.sourceField;
+        let effectiveStatic = m?.staticValue;
+        let effectiveEnumMapping = m?.enumMapping ? { ...m.enumMapping } : undefined;
+
+        if (!effectiveSource && effectiveStatic === undefined && bm) {
+            effectiveSource = bm.sourceField;
+            effectiveStatic = bm.staticValue;
+            effectiveEnumMapping = bm.enumMapping ? { ...bm.enumMapping } : undefined;
+        }
+
+        if (effectiveSource || effectiveStatic !== undefined) {
+            if (effectiveSource) mappedSources.add(effectiveSource);
+            const targetAttr = targetClass.attributes[path];
+            const isEnum = !!(targetAttr && targetAttr.enum);
+            
+            // Use override if specified, otherwise use default from schema
+            let observableTypeId = undefined;
+            if (m?.isObservableOverride) {
+                observableTypeId = m.observableTypeId;
+            } else if (targetAttr?.observable !== undefined) {
+                observableTypeId = targetAttr.observable;
+            }
+
+            result[path] = {
+                source: effectiveSource,
+                static: effectiveStatic,
+                enumMapping: effectiveEnumMapping,
+                isEnum: isEnum,
+                observableTypeId: observableTypeId,
+                isObservableOverride: m?.isObservableOverride
+            };
+        }
+    }
+
+    // Add raw_data mappings
+    if (targetClass.attributes['raw_data']) {
+        result['raw_data'] = {
+            source: '',
+            isEnum: false
+        };
+    }
+    if (targetClass.attributes['raw_data_hash']) {
+        result['raw_data_hash'] = {
+            source: '',
+            isEnum: false
+        };
+    }
+    if (targetClass.attributes['raw_data_size']) {
+        result['raw_data_size'] = {
+            source: '',
+            isEnum: false
+        };
+    }
+    if (targetClass.attributes['observables']) {
+        result['observables'] = {
+            source: '',
+            isEnum: false
+        };
+    }
+
+    // Add unmapped fields
+    if (targetClass.attributes['unmapped']) {
+        const unmappedFields = schemaFields.filter(sf => {
+            if (sf.type === 'object') return false;
+            if (mappedSources.has(sf.name)) return false;
+            
+            // Check if any parent is mapped
+            const parts = sf.name.split('.');
+            for (let i = 1; i < parts.length; i++) {
+                const parentPath = parts.slice(0, i).join('.');
+                if (mappedSources.has(parentPath)) return false;
+            }
+            return true;
+        });
+        for (const sf of unmappedFields) {
+            result[`unmapped.${sf.name}`] = {
+                source: sf.name,
+                isEnum: false
+            };
+        }
+    }
+
+    return result;
+}
+
+export function prepareParserConfig(
+    schemaFields: SchemaField[],
+    selectedCategory: string,
+    selectedClass: string,
+    useConditionalClass: boolean,
+    classDeterminingFields: DeterminingField[],
+    ocsfData: OCSFSchemaData,
+    defaultMappings: Record<string, AttributeMapping>
+) {
+    if (useConditionalClass && classDeterminingFields.length > 0) {
+        const defaultMappingObj = getMappingsForClass(defaultMappings, ocsfData.classes[selectedClass], schemaFields);
+        
+        const conditionalMappings = classDeterminingFields.flatMap(f => 
+            f.mappings.map(m => ({
+                field: f.name,
+                value: m.enumValue,
+                mapping: getMappingsForClass(m.mappings, ocsfData.classes[m.selectedClass], schemaFields, defaultMappings),
+                className: m.selectedClass,
+                categoryName: m.selectedCategory
+            }))
+        );
+
+        return { 
+            defaultMapping: defaultMappingObj, 
+            conditionals: conditionalMappings,
+            selectedClass,
+            selectedCategory
+        };
+    } else {
+        const mappingObj = getMappingsForClass(defaultMappings, ocsfData.classes[selectedClass], schemaFields);
+        return { 
+            defaultMapping: mappingObj,
+            selectedClass,
+            selectedCategory
+        };
+    }
+}
+
 export function generateCodeSnippet(
     schemaFields: SchemaField[],
     selectedCategory: string,
@@ -109,86 +250,6 @@ export function generateCodeSnippet(
     ocsfData: OCSFSchemaData,
     defaultMappings: Record<string, AttributeMapping>
 ) {
-    const getMappingsForClass = (mappings: Record<string, AttributeMapping>, targetClass: any, baseMappings?: Record<string, AttributeMapping>) => {
-        const result: Record<string, any> = {};
-        if (!targetClass) return result;
-
-        const allPaths = new Set([...Object.keys(mappings), ...Object.keys(baseMappings || {})]);
-        const mappedSources = new Set<string>();
-
-        for (const path of allPaths) {
-            if (path === 'unmapped' || path === 'raw_data') continue;
-
-            const m = mappings[path];
-            const bm = baseMappings?.[path];
-
-            let effectiveSource = m?.sourceField;
-            let effectiveStatic = m?.staticValue;
-            let effectiveEnumMapping = m?.enumMapping ? { ...m.enumMapping } : undefined;
-
-            if (!effectiveSource && effectiveStatic === undefined && bm) {
-                effectiveSource = bm.sourceField;
-                effectiveStatic = bm.staticValue;
-                effectiveEnumMapping = bm.enumMapping ? { ...bm.enumMapping } : undefined;
-            }
-
-            if (effectiveSource || effectiveStatic !== undefined) {
-                if (effectiveSource) mappedSources.add(effectiveSource);
-                const targetAttr = targetClass.attributes[path];
-                const isEnum = !!(targetAttr && targetAttr.enum);
-                
-                // Use override if specified, otherwise use default from schema
-                let observableTypeId = undefined;
-                if (m?.isObservableOverride) {
-                    observableTypeId = m.observableTypeId;
-                } else if (targetAttr?.observable !== undefined) {
-                    observableTypeId = targetAttr.observable;
-                }
-
-                result[path] = {
-                    source: effectiveSource,
-                    static: effectiveStatic,
-                    enumMapping: effectiveEnumMapping,
-                    isEnum: isEnum,
-                    observableTypeId: observableTypeId,
-                    isObservableOverride: m?.isObservableOverride
-                };
-            }
-        }
-
-        // Add raw_data mapping
-        if (targetClass.attributes['raw_data']) {
-            result['raw_data'] = {
-                source: '',
-                isEnum: false
-            };
-        }
-
-        // Add unmapped fields
-        if (targetClass.attributes['unmapped']) {
-            const unmappedFields = schemaFields.filter(sf => {
-                if (sf.type === 'object') return false;
-                if (mappedSources.has(sf.name)) return false;
-                
-                // Check if any parent is mapped
-                const parts = sf.name.split('.');
-                for (let i = 1; i < parts.length; i++) {
-                    const parentPath = parts.slice(0, i).join('.');
-                    if (mappedSources.has(parentPath)) return false;
-                }
-                return true;
-            });
-            for (const sf of unmappedFields) {
-                result[`unmapped.${sf.name}`] = {
-                    source: sf.name,
-                    isEnum: false
-                };
-            }
-        }
-
-        return result;
-    };
-
     const generateInterfaces = (classNames: string[], includeAll = true) => {
         const interfaces: string[] = [];
         const processedObjects = new Set<string>();
@@ -323,46 +384,30 @@ export type object_t = Record<string, any>;
         return interfaces.join('\n');
     };
 
-    let classLogic = '';
-    let mappingDeclaration = '';
     let typeDefinitions = '';
     let returnType = 'any';
+
+    const config = prepareParserConfig(
+        schemaFields,
+        selectedCategory,
+        selectedClass,
+        useConditionalClass,
+        classDeterminingFields,
+        ocsfData,
+        defaultMappings
+    );
 
     if (useConditionalClass && classDeterminingFields.length > 0) {
         const allConditionalMappings = classDeterminingFields.flatMap(f => f.mappings);
         const classesToInclude = [selectedClass, ...allConditionalMappings.map(m => m.selectedClass)].filter(Boolean);
         typeDefinitions = generateInterfaces(classesToInclude);
         returnType = classesToInclude.map(c => `OCSF${c.split('_').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('')}`).join(' | ') || 'any';
-
-        const defaultMappingObj = getMappingsForClass(defaultMappings, ocsfData.classes[selectedClass]);
-        
-        const conditionalMappings = classDeterminingFields.flatMap(f => 
-            f.mappings.map(m => ({
-                field: f.name,
-                value: m.enumValue,
-                mapping: getMappingsForClass(m.mappings, ocsfData.classes[m.selectedClass], defaultMappings),
-                className: m.selectedClass,
-                categoryName: m.selectedCategory
-            }))
-        );
-
-        mappingDeclaration = `const config: ParserConfig = ${JSON.stringify({ 
-            defaultMapping: defaultMappingObj, 
-            conditionals: conditionalMappings,
-            selectedClass,
-            selectedCategory
-        }, null, 4)};`;
     } else {
         typeDefinitions = generateInterfaces([selectedClass]);
         returnType = selectedClass ? `OCSF${selectedClass.split('_').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('')}` : 'any';
-
-        const mappingObj = getMappingsForClass(defaultMappings, ocsfData.classes[selectedClass]);
-        mappingDeclaration = `const config: ParserConfig = ${JSON.stringify({ 
-            defaultMapping: mappingObj,
-            selectedClass,
-            selectedCategory
-        }, null, 4)};`;
     }
+
+    const mappingDeclaration = `const config: ParserConfig = ${JSON.stringify(config, null, 4)};`;
 
     return {
         code: `

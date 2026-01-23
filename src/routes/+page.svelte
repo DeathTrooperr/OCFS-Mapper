@@ -5,11 +5,12 @@
     import JSONInputStep from "$lib/components/pages/home/JSONInputStep.svelte";
     import SourceFieldsStep from "$lib/components/pages/home/SourceFieldsStep.svelte";
     import OCSFMappingStep from "$lib/components/pages/home/OCSFMappingStep.svelte";
+    import TestingStep from "$lib/components/pages/home/TestingStep.svelte";
     import ExportStep from "$lib/components/pages/home/ExportStep.svelte";
     import DownloadStep from "$lib/components/pages/home/DownloadStep.svelte";
     import AIModal from "$lib/components/pages/home/AIModal.svelte";
     import type { DeterminingField, SchemaField, SavedMap, ClassMapping, OCSFSchemaData, OCSFClass, OCSFCategory, AttributeMapping } from "$lib/scripts/types/types";
-    import { parseSchema, generateCodeSnippet } from "$lib/scripts/pages/home/mapping-utils";
+    import { parseSchema, generateCodeSnippet, prepareParserConfig } from "$lib/scripts/pages/home/mapping-utils";
     import { generateOCSFPrompt as createOCSFPrompt, parseAIPrompt } from "$lib/scripts/pages/home/ai-utils";
     import { loadRecentMaps, saveMap, deleteMapFromStorage } from "$lib/scripts/pages/home/persistence";
 
@@ -30,7 +31,17 @@
     let generatedTypes = '';
 
     let currentStep = 0;
-    const steps = ["Input", "Schema", "Mapping", "Export", "Download"];
+    const steps = ["Input", "Schema", "Mapping", "Testing", "Export", "Download"];
+
+    $: parserConfig = prepareParserConfig(
+        schemaFields,
+        selectedCategory,
+        selectedClass,
+        useConditionalClass,
+        classDeterminingFields,
+        data.ocsf,
+        mappings
+    );
 
     $: ocsfCategories = Object.values(ocsf?.categories || {}).sort((a, b) => a.caption.localeCompare(b.caption));
     $: filteredClasses = (cat: string) => Object.values(ocsf?.classes || {}).filter(c => c.category === cat || (cat === 'other' && c.name === 'base_event'));
@@ -231,11 +242,13 @@
                     bind:activeMappingIndex
                 />
             {:else if currentStep === 3}
+                <TestingStep config={parserConfig} />
+            {:else if currentStep === 4}
                 <ExportStep 
                     bind:generatedCode 
                     onGenerate={handleGenerateCode} 
                 />
-            {:else if currentStep === 4}
+            {:else if currentStep === 5}
                 <DownloadStep 
                     {generatedCode}
                     {generatedTypes}
@@ -257,7 +270,7 @@
                     if (currentStep === 0) {
                         handleParseSchema();
                     } else {
-                        if (currentStep === 2) handleGenerateCode();
+                        if (currentStep === 3) handleGenerateCode();
                         currentStep = Math.min(steps.length - 1, currentStep + 1);
                     }
                 }}

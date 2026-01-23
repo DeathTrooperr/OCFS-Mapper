@@ -164,24 +164,25 @@
     <div class="grid grid-cols-1 gap-3">
         {#each filteredAttributes as attr}
             {@const isUnmapped = attr.name === 'unmapped'}
-            {@const isRawData = attr.name === 'raw_data'}
+            {@const isRawData = attr.name === 'raw_data' || attr.name === 'raw_data_hash' || attr.name === 'raw_data_size'}
+            {@const isObservables = attr.name === 'observables'}
             {@const m = mappings[attr.name]}
             {@const dm = defaultMappings[attr.name]}
             {@const isInherited = !isDefault && !m?.sourceField && m?.staticValue === undefined && dm}
             {@const effective = isInherited ? dm : m}
-            {@const hasMapping = effective?.sourceField || effective?.staticValue !== undefined || isUnmapped || isRawData}
+            {@const hasMapping = effective?.sourceField || effective?.staticValue !== undefined || isUnmapped || isRawData || isObservables}
             {@const effectiveObservable = effective?.isObservableOverride ? effective.observableTypeId : attr.observable}
             {@const hasMappingForObs = effective?.sourceField || effective?.staticValue !== undefined}
             
             <div class="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden transition-all {hasMapping ? 'border-blue-500/30 shadow-lg shadow-blue-900/5' : 'hover:border-slate-700'}">
-                {#if attr.name === 'observables'}
+                {#if isObservables}
                     <div class="mx-4 mt-4 p-3 bg-blue-900/20 border border-blue-500/30 rounded-xl flex items-start gap-3 animate-in fade-in zoom-in duration-300">
                         <svg class="w-5 h-5 text-blue-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <div class="text-[11px] text-blue-300">
                             <p class="font-bold mb-1 text-blue-200">Automated Observables</p>
-                            This array is automatically populated based on other mapped fields that have the <span class="text-emerald-400 font-bold">Obs</span> badge. Manual mapping here will be merged with the automated results.
+                            This array is automatically populated based on other mapped fields that have the <span class="text-emerald-400 font-bold">Obs</span> badge. Expand this row to see all automatically included fields.
                         </div>
                     </div>
                 {/if}
@@ -221,23 +222,23 @@
                         <div class="flex bg-slate-900 p-1 rounded-xl border border-slate-800">
                             <button 
                                 on:click={() => setSourceType(attr.name, 'none')}
-                                class="px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all {!m?.sourceField && m?.staticValue === undefined && !isUnmapped && !isRawData ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'} disabled:opacity-30 disabled:cursor-not-allowed"
-                                disabled={isUnmapped || isRawData}
+                                class="px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all {!m?.sourceField && m?.staticValue === undefined && !isUnmapped && !isRawData && !isObservables ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'} disabled:opacity-30 disabled:cursor-not-allowed"
+                                disabled={isUnmapped || isRawData || isObservables}
                             >
                                 {isDefault ? 'None' : 'Inherit'}
                             </button>
                             <button 
                                 on:click={() => setSourceType(attr.name, 'field')}
-                                class="px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all {m?.sourceField || isUnmapped || isRawData ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'} disabled:opacity-30 disabled:cursor-not-allowed"
-                                disabled={isUnmapped || isRawData || getCompatibleFields(attr).length === 0}
-                                title={isUnmapped || isRawData ? "Automatic mapping" : (getCompatibleFields(attr).length === 0 ? "No compatible fields found in source" : "")}
+                                class="px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all {m?.sourceField || isUnmapped || isRawData || isObservables ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'} disabled:opacity-30 disabled:cursor-not-allowed"
+                                disabled={isUnmapped || isRawData || isObservables || getCompatibleFields(attr).length === 0}
+                                title={isUnmapped || isRawData || isObservables ? "Automatic mapping" : (getCompatibleFields(attr).length === 0 ? "No compatible fields found in source" : "")}
                             >
-                                {isUnmapped || isRawData ? 'Auto' : 'Field'}
+                                {isUnmapped || isRawData || isObservables ? 'Auto' : 'Field'}
                             </button>
                             <button 
                                 on:click={() => setSourceType(attr.name, 'static')}
                                 class="px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all {m?.staticValue !== undefined ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'} disabled:opacity-30 disabled:cursor-not-allowed"
-                                disabled={isUnmapped || isRawData}
+                                disabled={isUnmapped || isRawData || isObservables}
                             >
                                 Static
                             </button>
@@ -249,9 +250,20 @@
                                     <span class="font-bold">Automatic (All Unmapped)</span>
                                     <span class="bg-blue-900/40 px-2 py-0.5 rounded text-[10px]">{unmappedSourceFields.length} fields</span>
                                 </div>
+                            {:else if isObservables}
+                                <div class="w-full bg-blue-900/20 border border-blue-800/50 text-blue-300 text-sm p-2.5 rounded-xl flex justify-between items-center">
+                                    <span class="font-bold">Automatic (Observables)</span>
+                                    <span class="bg-blue-900/40 px-2 py-0.5 rounded text-[10px]">{activeObservables.length} fields</span>
+                                </div>
                             {:else if isRawData}
                                 <div class="w-full bg-blue-900/20 border border-blue-800/50 text-blue-300 text-sm p-2.5 rounded-xl font-bold">
-                                    Automatic (Raw JSON)
+                                    {#if attr.name === 'raw_data'}
+                                        Automatic (Raw JSON)
+                                    {:else if attr.name === 'raw_data_hash'}
+                                        Automatic (Hash)
+                                    {:else if attr.name === 'raw_data_size'}
+                                        Automatic (Size)
+                                    {/if}
                                 </div>
                             {:else if effective?.sourceField}
                                 <select 
@@ -382,6 +394,33 @@
                                     {#if unmappedSourceFields.length === 0}
                                         <div class="w-full py-4 flex items-center justify-center bg-slate-900/30 rounded-xl border border-dashed border-slate-800">
                                             <p class="text-[11px] text-slate-600 italic text-center">All source fields have been mapped to OCSF attributes.</p>
+                                        </div>
+                                    {/if}
+                                </div>
+                            </div>
+                        {:else if isObservables}
+                            <div class="space-y-3 pt-2">
+                                <div class="flex items-center justify-between">
+                                    <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Automated Observables</label>
+                                    <span class="text-[10px] text-slate-600 italic">Fields automatically included in the observables array</span>
+                                </div>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {#each activeObservables as obs}
+                                        <div class="flex items-center justify-between px-3 py-2 bg-slate-900 rounded-xl border border-slate-800">
+                                            <div class="flex flex-col">
+                                                <span class="text-[11px] font-bold text-slate-300">{obs.caption}</span>
+                                                <span class="text-[9px] font-mono text-slate-500">{obs.name}</span>
+                                            </div>
+                                            <div class="flex items-center gap-2">
+                                                <span class="text-[9px] px-1.5 py-0.5 bg-emerald-900/20 text-emerald-500 border border-emerald-900/30 rounded uppercase font-bold">
+                                                    {getObservableTypeName(obs.typeId)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    {/each}
+                                    {#if activeObservables.length === 0}
+                                        <div class="col-span-full py-4 flex items-center justify-center bg-slate-900/30 rounded-xl border border-dashed border-slate-800">
+                                            <p class="text-[11px] text-slate-600 italic text-center">No fields are currently mapped as observables.</p>
                                         </div>
                                     {/if}
                                 </div>
