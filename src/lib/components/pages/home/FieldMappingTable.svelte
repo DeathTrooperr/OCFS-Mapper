@@ -170,6 +170,8 @@
             {@const isInherited = !isDefault && !m?.sourceField && m?.staticValue === undefined && dm}
             {@const effective = isInherited ? dm : m}
             {@const hasMapping = effective?.sourceField || effective?.staticValue !== undefined || isUnmapped || isRawData}
+            {@const effectiveObservable = effective?.isObservableOverride ? effective.observableTypeId : attr.observable}
+            {@const hasMappingForObs = effective?.sourceField || effective?.staticValue !== undefined}
             
             <div class="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden transition-all {hasMapping ? 'border-blue-500/30 shadow-lg shadow-blue-900/5' : 'hover:border-slate-700'}">
                 {#if attr.name === 'observables'}
@@ -197,8 +199,6 @@
                                 {#if attr.enum} (Enum){/if}
                             </span>
                             
-                            {@const effectiveObservable = effective?.isObservableOverride ? effective.observableTypeId : attr.observable}
-                            {@const hasMappingForObs = effective?.sourceField || effective?.staticValue !== undefined}
                             {#if effectiveObservable !== undefined}
                                 <span 
                                     class="px-2 py-0.5 text-[9px] uppercase font-black rounded border flex items-center gap-1 transition-all
