@@ -114,8 +114,11 @@ export function generateCodeSnippet(
         if (!targetClass) return result;
 
         const allPaths = new Set([...Object.keys(mappings), ...Object.keys(baseMappings || {})]);
+        const mappedSources = new Set<string>();
 
         for (const path of allPaths) {
+            if (path === 'unmapped' || path === 'raw_data') continue;
+
             const m = mappings[path];
             const bm = baseMappings?.[path];
 
@@ -130,16 +133,59 @@ export function generateCodeSnippet(
             }
 
             if (effectiveSource || effectiveStatic !== undefined) {
+                if (effectiveSource) mappedSources.add(effectiveSource);
                 const targetAttr = targetClass.attributes[path];
                 const isEnum = !!(targetAttr && targetAttr.enum);
+                
+                // Use override if specified, otherwise use default from schema
+                let observableTypeId = undefined;
+                if (m?.isObservableOverride) {
+                    observableTypeId = m.observableTypeId;
+                } else if (targetAttr?.observable !== undefined) {
+                    observableTypeId = targetAttr.observable;
+                }
+
                 result[path] = {
                     source: effectiveSource,
                     static: effectiveStatic,
                     enumMapping: effectiveEnumMapping,
-                    isEnum: isEnum
+                    isEnum: isEnum,
+                    observableTypeId: observableTypeId,
+                    isObservableOverride: m?.isObservableOverride
                 };
             }
         }
+
+        // Add raw_data mapping
+        if (targetClass.attributes['raw_data']) {
+            result['raw_data'] = {
+                source: '',
+                isEnum: false
+            };
+        }
+
+        // Add unmapped fields
+        if (targetClass.attributes['unmapped']) {
+            const unmappedFields = schemaFields.filter(sf => {
+                if (sf.type === 'object') return false;
+                if (mappedSources.has(sf.name)) return false;
+                
+                // Check if any parent is mapped
+                const parts = sf.name.split('.');
+                for (let i = 1; i < parts.length; i++) {
+                    const parentPath = parts.slice(0, i).join('.');
+                    if (mappedSources.has(parentPath)) return false;
+                }
+                return true;
+            });
+            for (const sf of unmappedFields) {
+                result[`unmapped.${sf.name}`] = {
+                    source: sf.name,
+                    isEnum: false
+                };
+            }
+        }
+
         return result;
     };
 
@@ -190,7 +236,7 @@ export type object_t = Record<string, any>;
             }
 
             for (const [attrName, attr] of Object.entries(cls.attributes) as [string, any][]) {
-                if (attrName === 'unmapped' || attrName.startsWith('$')) continue;
+                if (attrName.startsWith('$')) continue;
                 
                 let tsType = getTsTypeInternal(attr.type, attr);
                 if (tsType.startsWith('OCSF') && !tsType.includes(' | ')) {

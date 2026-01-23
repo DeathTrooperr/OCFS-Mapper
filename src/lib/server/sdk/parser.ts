@@ -2,6 +2,7 @@ import type { ParserConfig, AttributeMapping } from './types';
 
 export function getNestedValue(obj: any, path: string): any {
     if (!obj) return undefined;
+    if (!path) return obj;
     if (path.includes('[]')) {
         const [arrayPath, elementPath] = path.split('[]');
         const arr = getNestedValue(obj, arrayPath.endsWith('.') ? arrayPath.slice(0, -1) : arrayPath);
@@ -67,12 +68,14 @@ export function parseOCSF(input: any, config: ParserConfig): any {
     output.class_name = selectedClass;
     output.category_name = selectedCategory;
 
+    const observables: any[] = [];
+
     for (const [ocsfPath, fieldMapping] of Object.entries(activeMapping)) {
         let val: any;
         const m = fieldMapping as AttributeMapping;
         if (m.static !== undefined && m.static !== null) {
             val = m.static;
-        } else if (m.source) {
+        } else if (m.source !== undefined && m.source !== null) {
             val = getNestedValue(input, m.source);
         }
 
@@ -89,6 +92,38 @@ export function parseOCSF(input: any, config: ParserConfig): any {
                 }
             }
             setNestedValue(output, ocsfPath, val);
+
+            if (m.observableTypeId !== undefined && m.observableTypeId !== null) {
+                if (Array.isArray(val)) {
+                    val.forEach(v => {
+                        observables.push({
+                            name: ocsfPath,
+                            type_id: m.observableTypeId,
+                            value: v
+                        });
+                    });
+                } else {
+                    observables.push({
+                        name: ocsfPath,
+                        type_id: m.observableTypeId,
+                        value: val
+                    });
+                }
+            }
+        }
+    }
+
+    if (observables.length > 0) {
+        if (!output.observables) {
+            output.observables = observables;
+        } else if (Array.isArray(output.observables)) {
+            // Append automated observables if they aren't already there (by name)
+            const existingNames = new Set(output.observables.map((o: any) => o.name));
+            observables.forEach(o => {
+                if (!existingNames.has(o.name)) {
+                    output.observables.push(o);
+                }
+            });
         }
     }
     

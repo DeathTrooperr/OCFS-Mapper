@@ -8,6 +8,8 @@ export interface AttributeMapping {
     sourceField?: string;
     staticValue?: string;
     enumMapping: Record<string, string>;
+    observableTypeId?: number;
+    isObservableOverride?: boolean;
 }
 
 export interface ClassMapping {
@@ -46,6 +48,7 @@ export interface OCSFAttribute {
     is_array?: boolean;
     requirement?: string;
     enum?: Record<string, { caption: string; description?: string }>;
+    observable?: number;
 }
 
 export interface OCSFClass {
@@ -66,5 +69,6 @@ export interface OCSFSchemaData {
     categories: Record<string, OCSFCategory>;
     classes: Record<string, OCSFClass>;
     dictionary: Record<string, OCSFAttribute>;
+    types: Record<string, any>;
     profiles: Record<string, any>;
 }

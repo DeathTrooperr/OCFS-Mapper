@@ -254,6 +254,7 @@
                 mappings={currentMappings}
                 defaultMappings={mappings}
                 isDefault={activeMappingIndex === 'default'}
+                ocsfData={data.ocsf}
                 on:change={handleMappingChange}
             />
         </section>

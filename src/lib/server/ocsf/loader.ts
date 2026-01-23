@@ -7,6 +7,7 @@ export interface OCSFAttribute {
     is_array?: boolean;
     requirement?: string;
     enum?: Record<string, { caption: string; description?: string }>;
+    observable?: number;
 }
 
 export interface OCSFClass {
@@ -27,6 +28,7 @@ export class OCSFSchema {
     categories: Record<string, OCSFCategory> = {};
     classes: Record<string, OCSFClass> = {};
     dictionary: Record<string, any> = {};
+    types: Record<string, any> = {};
     profiles: Record<string, any> = {};
 
     constructor(files: Record<string, any>) {
@@ -40,6 +42,7 @@ export class OCSFSchema {
         const data = files['/dictionary.json'] || files['dictionary.json'];
         if (data) {
             this.dictionary = data.attributes || {};
+            this.types = data.types || {};
         }
     }
 
@@ -189,6 +192,15 @@ export class OCSFSchema {
         // Handle enum if it exists in dictionary or local overrides
         let enumData = merged.enum || dictAttr.enum;
 
+        // Check if the attribute or its type is an observable
+        let observable = merged.observable;
+        if (observable === undefined && merged.type) {
+            const typeInfo = this.types[merged.type];
+            if (typeInfo && typeInfo.observable !== undefined) {
+                observable = typeInfo.observable;
+            }
+        }
+
         return {
             name: attrName,
             caption: merged.caption || attrName,
@@ -196,7 +208,8 @@ export class OCSFSchema {
             type: merged.type || 'string_t',
             is_array: merged.is_array,
             requirement: merged.requirement,
-            enum: enumData
+            enum: enumData,
+            observable: observable
         };
     }
     
@@ -205,6 +218,7 @@ export class OCSFSchema {
             categories: this.categories,
             classes: this.classes,
             dictionary: this.dictionary,
+            types: this.types,
             profiles: this.profiles
         };
     }
