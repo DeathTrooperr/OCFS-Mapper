@@ -21,16 +21,16 @@
     }
 </script>
 
-<header class="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-slate-800 pb-8 mb-10">
-    <div class="flex items-center gap-4">
-        <div class="bg-blue-600 p-3 rounded-2xl shadow-lg shadow-blue-900/20">
-            <svg class="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+<header class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 lg:gap-6 border-b border-slate-800 pb-4 lg:pb-8 mb-4 lg:mb-10">
+    <div class="flex items-center gap-3 lg:gap-4">
+        <div class="bg-blue-600 p-2 lg:p-3 rounded-xl lg:rounded-2xl shadow-lg shadow-blue-900/20">
+            <svg class="w-6 h-6 lg:w-8 lg:h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
             </svg>
         </div>
         <div>
-            <h1 class="text-3xl font-black tracking-tight text-white">OCSF Mapper</h1>
-            <p class="text-slate-400 text-sm font-medium">Transform JSON logs into OCSF compliant events.</p>
+            <h1 class="text-xl lg:text-3xl font-black tracking-tight text-white">OCSF Mapper</h1>
+            <p class="text-slate-400 text-xs lg:text-sm font-medium">Transform JSON logs into OCSF compliant events.</p>
         </div>
     </div>
     

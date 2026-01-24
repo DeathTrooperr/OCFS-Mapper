@@ -8,9 +8,9 @@
     }
 </script>
 
-<div class="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-    <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
-        <div class="px-8 py-6 border-b border-slate-800 bg-slate-900/50 flex flex-col sm:flex-row justify-between items-center gap-4">
+<div class="h-full flex flex-col space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div class="flex-1 min-h-0 bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden flex flex-col">
+        <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50 flex flex-col sm:flex-row justify-between items-center gap-4 flex-none">
             <div>
                 <h2 class="text-xl font-bold text-white">Review & Export</h2>
                 <p class="text-slate-400 text-sm mt-1">Generate and copy your OCSF mapping code.</p>
@@ -33,13 +33,13 @@
             </div>
         </div>
         
-        <div class="p-8">
+        <div class="p-4 md:p-6 flex-1 min-h-0">
             {#if generatedCode}
-                <div class="relative group">
-                    <pre class="w-full h-[500px] p-6 bg-slate-950 border border-slate-800 rounded-xl font-mono text-sm text-blue-300 overflow-auto shadow-inner">{generatedCode}</pre>
+                <div class="relative group h-full">
+                    <pre class="w-full h-full p-6 bg-slate-950 border border-slate-800 rounded-xl font-mono text-sm text-blue-300 overflow-auto shadow-inner">{generatedCode}</pre>
                 </div>
             {:else}
-                <div class="h-[500px] flex flex-col items-center justify-center bg-slate-950 border border-slate-800 border-dashed rounded-xl text-slate-500 space-y-4">
+                <div class="h-full flex flex-col items-center justify-center bg-slate-950 border border-slate-800 border-dashed rounded-xl text-slate-500 space-y-4">
                     <svg class="w-16 h-16 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                     </svg>

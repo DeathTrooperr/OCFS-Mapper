@@ -209,8 +209,8 @@
     }
 </script>
 
-<main class="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-blue-500/30">
-    <div class="max-w-[1400px] mx-auto p-4 md:p-8 space-y-8">
+<main class="h-screen w-full bg-slate-950 text-slate-200 font-sans selection:bg-blue-500/30 flex flex-col overflow-hidden">
+    <div class="flex-none p-4 md:p-8 pb-0">
         <Header 
             bind:currentMapName 
             {recentMaps} 
@@ -227,39 +227,45 @@
             {steps} 
             onStepClick={(s) => currentStep = s}
         />
+    </div>
 
-        <div class="min-h-[500px]">
-            {#if currentStep === 0}
-                <JSONInputStep bind:jsonInput enableAI={ENABLE_AI_ASSISTANT} />
-            {:else if currentStep === 1}
-                <SourceFieldsStep bind:schemaFields />
-            {:else if currentStep === 2}
-                <OCSFMappingStep 
-                    {data}
-                    bind:schemaFields
-                    bind:useConditionalClass
-                    bind:classDeterminingFields
-                    bind:mappings
-                    bind:selectedCategory
-                    bind:selectedClass
-                    bind:activeMappingIndex
-                />
-            {:else if currentStep === 3}
-                <TestingStep config={parserConfig} />
-            {:else if currentStep === 4}
-                <ExportStep 
-                    bind:generatedCode 
-                    onGenerate={handleGenerateCode} 
-                />
-            {:else if currentStep === 5}
-                <DownloadStep 
-                    {generatedCode}
-                    {generatedTypes}
-                />
-            {/if}
+    <div class="flex-1 overflow-y-auto p-4 md:p-8 pt-2 md:pt-4 min-h-0">
+        <div class="w-full mx-auto h-full flex flex-col">
+            <div class="flex-1">
+                {#if currentStep === 0}
+                    <JSONInputStep bind:jsonInput enableAI={ENABLE_AI_ASSISTANT} />
+                {:else if currentStep === 1}
+                    <SourceFieldsStep bind:schemaFields />
+                {:else if currentStep === 2}
+                    <OCSFMappingStep 
+                        {data}
+                        bind:schemaFields
+                        bind:useConditionalClass
+                        bind:classDeterminingFields
+                        bind:mappings
+                        bind:selectedCategory
+                        bind:selectedClass
+                        bind:activeMappingIndex
+                    />
+                {:else if currentStep === 3}
+                    <TestingStep config={parserConfig} />
+                {:else if currentStep === 4}
+                    <ExportStep 
+                        bind:generatedCode 
+                        onGenerate={handleGenerateCode} 
+                    />
+                {:else if currentStep === 5}
+                    <DownloadStep 
+                        {generatedCode}
+                        {generatedTypes}
+                    />
+                {/if}
+            </div>
         </div>
+    </div>
 
-        <div class="flex justify-between items-center pt-8 border-t border-slate-800">
+    <div class="flex-none p-4 md:p-6 border-t border-slate-800 bg-slate-950/50 backdrop-blur-sm">
+        <div class="flex justify-between items-center max-w-full">
             <button 
                 on:click={() => currentStep = Math.max(0, currentStep - 1)}
                 class="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-400 font-bold rounded-xl transition-all disabled:opacity-0"

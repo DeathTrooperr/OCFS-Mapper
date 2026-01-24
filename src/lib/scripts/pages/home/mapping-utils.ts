@@ -85,6 +85,96 @@ export function parseSchema(jsonInput: string): SchemaField[] {
     }
 }
 
+export interface HierarchicalField {
+    name: string;
+    label: string;
+    type: string;
+    field?: SchemaField;
+    children: HierarchicalField[];
+}
+
+export function buildFieldTree(fields: SchemaField[]): HierarchicalField[] {
+    const root: HierarchicalField[] = [];
+    const map = new Map<string, HierarchicalField>();
+
+    // First pass: create all nodes
+    for (const field of fields) {
+        const node: HierarchicalField = {
+            name: field.name,
+            label: field.name.split('.').pop()?.replace(/\[\]$/, '') || field.name,
+            type: field.type,
+            field: field,
+            children: []
+        };
+        map.set(field.name, node);
+    }
+
+    // Second pass: connect children to parents
+    for (const field of fields) {
+        const node = map.get(field.name)!;
+        const lastDotIndex = field.name.lastIndexOf('.');
+        if (lastDotIndex === -1) {
+            root.push(node);
+        } else {
+            let parentName = field.name.substring(0, lastDotIndex);
+            // Handle array parents by stripping []
+            if (parentName.endsWith('[]')) {
+                parentName = parentName.slice(0, -2);
+            }
+            
+            const parent = map.get(parentName);
+            if (parent) {
+                parent.children.push(node);
+            } else {
+                // If parent not found (shouldn't happen with current parseSchema), treat as root
+                root.push(node);
+            }
+        }
+    }
+
+    return root;
+}
+
+export interface FieldGroup {
+    label: string;
+    fields: SchemaField[];
+}
+
+export function groupFields(fields: SchemaField[]): FieldGroup[] {
+    const groups: Record<string, SchemaField[]> = {};
+    const topLevelFields: SchemaField[] = [];
+
+    for (const field of fields) {
+        const firstDotIndex = field.name.indexOf('.');
+        if (firstDotIndex === -1) {
+            topLevelFields.push(field);
+        } else {
+            const rootName = field.name.substring(0, firstDotIndex);
+            if (!groups[rootName]) groups[rootName] = [];
+            groups[rootName].push(field);
+        }
+    }
+
+    const result: FieldGroup[] = [];
+    
+    // Add ungrouped top-level fields first (if they are not parents)
+    const pureTopLevel = topLevelFields.filter(f => !groups[f.name]);
+    if (pureTopLevel.length > 0) {
+        result.push({ label: 'Top Level', fields: pureTopLevel });
+    }
+
+    // Add grouped fields
+    for (const rootName in groups) {
+        const parentField = topLevelFields.find(f => f.name === rootName);
+        result.push({ 
+            label: rootName + (parentField ? ` (${parentField.type})` : ''), 
+            fields: groups[rootName] 
+        });
+    }
+
+    return result;
+}
+
 export function getMappingsForClass(
     mappings: Record<string, AttributeMapping>, 
     targetClass: any, 

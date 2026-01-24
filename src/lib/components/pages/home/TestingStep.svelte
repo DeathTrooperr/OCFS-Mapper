@@ -24,19 +24,19 @@
     }
 </script>
 
-<div class="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+<div class="h-full flex flex-col space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Input Area -->
         <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden flex flex-col">
-            <div class="px-8 py-6 border-b border-slate-800 bg-slate-900/50">
+            <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50 flex-none">
                 <h2 class="text-xl font-bold text-white">Live Log Input</h2>
                 <p class="text-slate-400 text-sm mt-1">Paste a single log event to test your mappings.</p>
             </div>
-            <div class="p-6 flex-1">
+            <div class="p-4 md:p-6 flex-1 min-h-0">
                 <textarea 
                     bind:value={testLog}
                     on:input={handleTest}
-                    class="w-full h-96 p-4 bg-slate-950 border border-slate-800 rounded-xl font-mono text-sm text-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all resize-none shadow-inner" 
+                    class="w-full h-full p-4 bg-slate-950 border border-slate-800 rounded-xl font-mono text-sm text-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all resize-none shadow-inner" 
                     placeholder="Paste JSON here..."
                 ></textarea>
             </div>
@@ -44,7 +44,7 @@
 
         <!-- Output Area -->
         <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden flex flex-col">
-            <div class="px-8 py-6 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
+            <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center flex-none">
                 <div>
                     <h2 class="text-xl font-bold text-white">Parsed OCSF Event</h2>
                     <p class="text-slate-400 text-sm mt-1">Real-time result of the parsing logic.</p>
@@ -55,13 +55,13 @@
                     </span>
                 {/if}
             </div>
-            <div class="p-6 flex-1 bg-slate-950">
+            <div class="p-4 md:p-6 flex-1 bg-slate-950 min-h-0">
                 {#if error}
                     <div class="h-full flex items-center justify-center p-8 text-red-400 font-mono text-sm bg-red-900/10 rounded-xl border border-red-900/20">
                         Error: {error}
                     </div>
                 {:else if parsedResult}
-                    <pre class="h-96 overflow-auto p-4 font-mono text-sm text-blue-300">
+                    <pre class="h-full overflow-auto p-4 font-mono text-sm text-blue-300">
                         {JSON.stringify(parsedResult, null, 2)}
                     </pre>
                 {:else}
@@ -73,7 +73,7 @@
         </div>
     </div>
 
-    <div class="bg-blue-900/10 border border-blue-800/50 p-6 rounded-2xl">
+    <div class="flex-none bg-blue-900/10 border border-blue-800/50 p-6 rounded-2xl">
         <div class="flex gap-4">
             <div class="w-12 h-12 bg-blue-900/30 text-blue-400 rounded-xl flex items-center justify-center flex-shrink-0">
                 <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">

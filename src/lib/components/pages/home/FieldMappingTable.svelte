@@ -1,7 +1,7 @@
 <script lang="ts">
     import { createEventDispatcher } from "svelte";
     import type { SchemaField, AttributeMapping, OCSFSchemaData } from "$lib/scripts/types/types";
-    import { isTypeCompatible, getTsType } from "$lib/scripts/pages/home/mapping-utils";
+    import { isTypeCompatible, getTsType, groupFields } from "$lib/scripts/pages/home/mapping-utils";
     import { OCSF_TYPE_TO_OBSERVABLE, OBSERVABLE_TYPE_NAMES } from "$lib/sdk/observables";
     export let schemaFields: SchemaField[];
     export let targetClass: any;
@@ -193,6 +193,34 @@
         .filter(([_, t]: [string, any]) => t.observable !== undefined)
         .sort((a: [string, any], b: [string, any]) => a[1].caption.localeCompare(b[1].caption))
         : [];
+
+    const typeColors: Record<string, string> = {
+        string: 'text-blue-400',
+        number: 'text-green-400',
+        boolean: 'text-yellow-400',
+        enum: 'text-purple-400',
+        object: 'text-slate-400',
+        array: 'text-slate-400'
+    };
+
+    const typeIcons: Record<string, string> = {
+        string: 'Abc',
+        number: '123',
+        boolean: 'T/F',
+        enum: ':::',
+        object: '{}',
+        array: '[]'
+    };
+
+    function getDisplayType(attr: any) {
+        if (attr.is_array) return 'array';
+        if (ocsfData?.classes[attr.type]) return 'object';
+        if (attr.enum) return 'enum';
+        const t = (attr.type || '').toLowerCase();
+        if (t.includes('int') || t.includes('float') || t.includes('long') || t.includes('double') || t === 'number') return 'number';
+        if (t.includes('bool')) return 'boolean';
+        return 'string';
+    }
 </script>
 
 {#snippet observableConfig(path, attr, m)}
@@ -256,13 +284,13 @@
     {/if}
 {/snippet}
 
-<div class="space-y-4">
-    <div class="flex flex-col md:flex-row md:items-center justify-between mb-4 px-2 gap-4">
+<div class="h-full flex flex-col space-y-4 p-4 md:p-6">
+    <div class="flex-none flex flex-col md:flex-row md:items-center justify-between mb-4 px-2 gap-4">
         <h3 class="text-lg font-bold text-white flex items-center gap-3">
             <span class="w-1.5 h-6 bg-blue-500 rounded-full"></span>
             {title}
         </h3>
-        <div class="relative w-full md:w-64">
+        <div class="relative w-full md:w-96">
             <input 
                 type="text" 
                 bind:value={searchQuery}
@@ -276,7 +304,7 @@
     </div>
 
     {#if activeObservables.length > 0}
-        <div class="mb-6 px-2 animate-in fade-in slide-in-from-top-2 duration-300">
+        <div class="flex-none mb-2 px-2 animate-in fade-in slide-in-from-top-2 duration-300">
             <div class="bg-slate-900/50 border border-slate-800 rounded-2xl p-4">
                 <div class="flex items-center justify-between mb-4">
                     <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
@@ -307,7 +335,7 @@
         </div>
     {/if}
 
-    <div class="grid grid-cols-1 gap-3">
+    <div class="flex-1 overflow-y-auto min-h-0 pr-2 space-y-3">
         {#each filteredAttributes as attr}
             {@const isUnmapped = attr.name === 'unmapped'}
             {@const isRawData = attr.name === 'raw_data' || attr.name === 'raw_data_hash' || attr.name === 'raw_data_size'}
@@ -324,6 +352,7 @@
             {@const needsEnumMapping = isEnum && effective?.sourceField && !hasEnumMappings}
             {@const typeIdFromSchema = attr.observable ?? OCSF_TYPE_TO_OBSERVABLE[attr.type]}
             {@const effectiveObsId = effective?.isObservableOverride ? effective.observableTypeId : typeIdFromSchema}
+            {@const displayType = getDisplayType(attr)}
             
             <div class="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden transition-all {hasMapping ? 'border-blue-500/30 shadow-lg shadow-blue-900/5' : 'hover:border-slate-700'}">
                 {#if isObservables}
@@ -337,48 +366,56 @@
                         </div>
                     </div>
                 {/if}
-                <div class="flex flex-col lg:flex-row items-stretch lg:items-center p-4 gap-4">
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2 mb-1">
-                            <span class="font-mono text-sm text-slate-200 font-bold truncate">{attr.caption}</span>
-                            {#if attr.requirement === 'required'}
-                                <span class="px-1.5 py-0.5 text-[8px] uppercase font-black bg-red-900/20 text-red-500 rounded border border-red-900/30">Required</span>
-                            {:else if attr.requirement === 'recommended'}
-                                <span class="px-1.5 py-0.5 text-[8px] uppercase font-black bg-blue-900/20 text-blue-500 rounded border border-blue-900/30">Recommended</span>
-                            {/if}
-                            <span class="px-2 py-0.5 text-[9px] uppercase font-bold bg-slate-900 text-slate-500 rounded border border-slate-800">
-                                {attr.type}{attr.is_array ? '[]' : ''}
-                            </span>
-                            
-                            {#if isEnum}
-                                <span 
-                                    class="px-2 py-0.5 text-[9px] uppercase font-black rounded border flex items-center gap-1 transition-all
-                                    {needsEnumMapping ? 'bg-amber-900/20 text-amber-500 border-amber-900/30 animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.1)]' : 'bg-purple-900/20 text-purple-500 border-purple-900/30'}"
-                                    title={needsEnumMapping ? 'Enum values must be mapped to OCSF constants' : 'OCSF Enum Attribute'}
-                                >
-                                    <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                                        <path d="M4 6h16M4 12h16M4 18h16" />
-                                    </svg>
-                                    Enum {needsEnumMapping ? '(Mapping Required)' : ''}
-                                </span>
-                            {/if}
-                             
-                             {#if effectiveObsId !== undefined}
-                                <span 
-                                    class="px-2 py-0.5 text-[9px] uppercase font-black rounded border flex items-center gap-1 transition-all
-                                    {effective?.isObservableOverride ? 'bg-purple-900/20 text-purple-400 border-purple-900/30' : 'bg-emerald-900/20 text-emerald-500 border-emerald-900/30'}
-                                    {!hasMappingForObs ? 'opacity-40 grayscale' : ''}" 
-                                    title="{effective?.isObservableOverride ? 'Manual' : 'Automated'} Observable: {getObservableTypeName(effectiveObsId)} (ID: {effectiveObsId}) {!hasMappingForObs ? '- Map this field to activate' : ''}"
-                                >
-                                    <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                                        <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                        <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                    </svg>
-                                    Obs
-                                </span>
-                            {/if}
+                <div class="flex flex-col lg:flex-row items-stretch lg:items-center p-3 md:p-4 gap-4">
+                    <div class="flex items-center gap-3 flex-1 min-w-0">
+                        <div class="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0">
+                            <span class="{typeColors[displayType] || 'text-slate-400'} text-[10px] font-bold">{typeIcons[displayType] || '{}'}</span>
                         </div>
-                        <div class="text-[10px] text-slate-500 font-mono truncate">{attr.name}</div>
+                        
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 mb-0.5">
+                                <span class="font-mono text-sm text-slate-200 font-bold truncate">{attr.caption}</span>
+                                {#if attr.requirement === 'required'}
+                                    <span class="px-1.5 py-0.5 text-[8px] uppercase font-black bg-red-900/20 text-red-500 rounded border border-red-900/30">Required</span>
+                                {:else if attr.requirement === 'recommended'}
+                                    <span class="px-1.5 py-0.5 text-[8px] uppercase font-black bg-blue-900/20 text-blue-500 rounded border border-blue-900/30">Recommended</span>
+                                {/if}
+                                
+                                {#if isEnum}
+                                    <span 
+                                        class="px-2 py-0.5 text-[9px] uppercase font-black rounded border flex items-center gap-1 transition-all
+                                        {needsEnumMapping ? 'bg-amber-900/20 text-amber-500 border-amber-900/30 animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.1)]' : 'bg-purple-900/20 text-purple-500 border-purple-900/30'}"
+                                        title={needsEnumMapping ? 'Enum values must be mapped to OCSF constants' : 'OCSF Enum Attribute'}
+                                    >
+                                        <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                            <path d="M4 6h16M4 12h16M4 18h16" />
+                                        </svg>
+                                        Enum {needsEnumMapping ? '(Mapping Required)' : ''}
+                                    </span>
+                                {/if}
+                                 
+                                 {#if effectiveObsId !== undefined}
+                                    <span 
+                                        class="px-2 py-0.5 text-[9px] uppercase font-black rounded border flex items-center gap-1 transition-all
+                                        {effective?.isObservableOverride ? 'bg-purple-900/20 text-purple-400 border-purple-900/30' : 'bg-emerald-900/20 text-emerald-500 border-emerald-900/30'}
+                                        {!hasMappingForObs ? 'opacity-40 grayscale' : ''}" 
+                                        title="{effective?.isObservableOverride ? 'Manual' : 'Automated'} Observable: {getObservableTypeName(effectiveObsId)} (ID: {effectiveObsId}) {!hasMappingForObs ? '- Map this field to activate' : ''}"
+                                    >
+                                        <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                            <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                            <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                        </svg>
+                                        Obs
+                                    </span>
+                                {/if}
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <div class="text-[10px] text-slate-500 font-mono truncate">{attr.name}</div>
+                                <span class="text-[9px] text-slate-600 font-bold uppercase tracking-wider">
+                                    {attr.type}{attr.is_array ? '[]' : ''}
+                                </span>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="flex flex-col sm:flex-row items-center gap-3">
@@ -410,7 +447,7 @@
                             </div>
                         {/if}
 
-                        <div class="w-full sm:w-64 relative">
+                        <div class="w-full sm:w-80 relative">
                             {#if isUnmapped}
                                 <div class="w-full bg-blue-900/20 border border-blue-800/50 text-blue-300 text-sm p-2.5 rounded-xl flex justify-between items-center">
                                     <span class="font-bold">Automatic (All Unmapped)</span>
@@ -439,8 +476,15 @@
                                         disabled={isInherited}
                                         class="w-full bg-slate-900 border border-slate-800 text-slate-200 text-sm p-2.5 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none appearance-none transition-all {isInherited ? 'opacity-50' : ''}"
                                     >
-                                        {#each getCompatibleFields(attr) as sf}
-                                            <option value={sf.name}>{sf.name} ({sf.type})</option>
+                                        <option value="">Select source field...</option>
+                                        {#each groupFields(getCompatibleFields(attr)) as group}
+                                            <optgroup label={group.label}>
+                                                {#each group.fields as sf}
+                                                    <option value={sf.name}>
+                                                        {sf.name.includes('.') ? '\u00A0\u00A0'.repeat(sf.name.split('.').length - 1) + sf.name.split('.').pop() : sf.name} ({sf.type})
+                                                    </option>
+                                                {/each}
+                                            </optgroup>
                                         {/each}
                                     </select>
                                     {#if getSourceFieldInfo(effective.sourceField)?.example !== undefined}
@@ -557,27 +601,38 @@
                                                 {@const subEffective = isSubInherited ? subDm : subM}
                                                 {@const subTypeIdFromSchema = subAttr.observable ?? OCSF_TYPE_TO_OBSERVABLE[subAttr.type]}
                                                 {@const subEffectiveObsId = subEffective?.isObservableOverride ? subEffective.observableTypeId : subTypeIdFromSchema}
+                                                {@const subDisplayType = getDisplayType(subAttr)}
                                                 
                                                 <div class="flex flex-col py-2 border-b border-slate-800/50 last:border-0 gap-2">
                                                     <div class="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-                                                        <div class="flex-1 min-w-0">
-                                                            <div class="flex items-center gap-2">
-                                                                <span class="text-[11px] font-bold text-slate-300">{subAttr.caption}</span>
-                                                                {#if subAttr.requirement === 'required'}
-                                                                    <span class="text-[8px] text-red-500 font-bold uppercase">Req</span>
-                                                                {/if}
-                                                                <span class="text-[9px] text-slate-500 font-mono">{subAttr.name}</span>
-                                                                 
-                                                                {#if subEffectiveObsId !== undefined}
-                                                                    <span 
-                                                                        class="px-1.5 py-0.5 text-[7px] uppercase font-black rounded border flex items-center gap-1
-                                                                        {subEffective?.isObservableOverride ? 'bg-purple-900/20 text-purple-400 border-purple-900/30' : 'bg-emerald-900/20 text-emerald-500 border-emerald-900/30'}
-                                                                        {!subEffective?.sourceField && subEffective?.staticValue === undefined ? 'opacity-40 grayscale' : ''}" 
-                                                                        title="{subEffective?.isObservableOverride ? 'Manual' : 'Automated'} Observable: {getObservableTypeName(subEffectiveObsId)} (ID: {subEffectiveObsId})"
-                                                                    >
-                                                                        Obs
+                                                        <div class="flex items-center gap-3 flex-1 min-w-0">
+                                                            <div class="w-7 h-7 rounded bg-slate-950 border border-slate-800 flex items-center justify-center shrink-0">
+                                                                <span class="{typeColors[subDisplayType] || 'text-slate-400'} text-[8px] font-bold">{typeIcons[subDisplayType] || '{}'}</span>
+                                                            </div>
+                                                            <div class="flex-1 min-w-0">
+                                                                <div class="flex items-center gap-2">
+                                                                    <span class="text-[11px] font-bold text-slate-300 truncate">{subAttr.caption}</span>
+                                                                    {#if subAttr.requirement === 'required'}
+                                                                        <span class="text-[8px] text-red-500 font-bold uppercase">Req</span>
+                                                                    {/if}
+                                                                     
+                                                                    {#if subEffectiveObsId !== undefined}
+                                                                        <span 
+                                                                            class="px-1.5 py-0.5 text-[7px] uppercase font-black rounded border flex items-center gap-1
+                                                                            {subEffective?.isObservableOverride ? 'bg-purple-900/20 text-purple-400 border-purple-900/30' : 'bg-emerald-900/20 text-emerald-500 border-emerald-900/30'}
+                                                                            {!subEffective?.sourceField && subEffective?.staticValue === undefined ? 'opacity-40 grayscale' : ''}" 
+                                                                            title="{subEffective?.isObservableOverride ? 'Manual' : 'Automated'} Observable: {getObservableTypeName(subEffectiveObsId)} (ID: {subEffectiveObsId})"
+                                                                        >
+                                                                            Obs
+                                                                        </span>
+                                                                    {/if}
+                                                                </div>
+                                                                <div class="flex items-center gap-2">
+                                                                    <div class="text-[9px] text-slate-500 font-mono truncate">{subAttr.name}</div>
+                                                                    <span class="text-[8px] text-slate-600 font-bold uppercase tracking-wider">
+                                                                        {subAttr.type}{subAttr.is_array ? '[]' : ''}
                                                                     </span>
-                                                                {/if}
+                                                                </div>
                                                             </div>
                                                         </div>
                                                         <div class="flex items-center gap-2 w-full sm:w-auto">
@@ -617,8 +672,15 @@
                                                                         disabled={isSubInherited}
                                                                         class="w-full bg-slate-950 border border-slate-800 text-[10px] p-1.5 rounded-lg outline-none text-slate-300 focus:ring-1 focus:ring-blue-500 {isSubInherited ? 'opacity-50' : ''}"
                                                                     >
-                                                                        {#each getCompatibleFields(subAttr) as sf}
-                                                                            <option value={sf.name}>{sf.name}</option>
+                                                                        <option value="">Select field...</option>
+                                                                        {#each groupFields(getCompatibleFields(subAttr)) as group}
+                                                                            <optgroup label={group.label}>
+                                                                                {#each group.fields as sf}
+                                                                                    <option value={sf.name}>
+                                                                                        {sf.name.includes('.') ? '\u00A0\u00A0'.repeat(sf.name.split('.').length - 1) + sf.name.split('.').pop() : sf.name}
+                                                                                    </option>
+                                                                                {/each}
+                                                                            </optgroup>
                                                                         {/each}
                                                                     </select>
                                                                 {:else if subEffective?.staticValue !== undefined}
