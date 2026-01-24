@@ -15,14 +15,14 @@
             <p class="text-slate-400 text-sm mt-1">Review detected fields and adjust types if necessary. Nested fields are grouped for clarity.</p>
         </div>
         
-        <div class="p-4 md:p-6 flex-1 overflow-y-auto min-h-0">
-            <div class="bg-slate-950/50 border border-slate-800 rounded-xl p-4">
+        <div class="p-4 md:p-6 flex-1 overflow-y-auto min-h-0 h-full">
+            <div class="bg-slate-950/50 border border-slate-800 rounded-xl p-4 h-full">
                 {#each fieldTree as node}
                     <SourceFieldNode {node} level={0} />
                 {/each}
 
                 {#if fieldTree.length === 0}
-                    <div class="text-center py-12">
+                    <div class="flex items-center justify-center py-12 h-full w-full">
                         <p class="text-slate-500">No fields detected. Go back to the Input step and provide valid JSON.</p>
                     </div>
                 {/if}

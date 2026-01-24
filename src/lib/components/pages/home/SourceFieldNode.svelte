@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { HierarchicalField } from "$lib/scripts/pages/home/mapping-utils";
+    import { OBSERVABLE_TYPE_NAMES } from "$lib/sdk/observables";
     import SourceFieldNode from "./SourceFieldNode.svelte";
 
     export let node: HierarchicalField;
@@ -79,6 +80,37 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7" />
                             </svg>
                         </div>
+                    </div>
+                {/if}
+
+                {#if !node.children.length && node.field}
+                    <div class="flex items-center gap-1.5 ml-1">
+                        <label class="flex items-center gap-1 cursor-pointer group/obs" title="Mark as Observable">
+                            <input 
+                                type="checkbox" 
+                                bind:checked={node.field.isObservable}
+                                class="w-3 h-3 rounded border-slate-700 bg-slate-900 text-blue-600 focus:ring-blue-500/50"
+                            />
+                            <span class="text-[9px] font-bold uppercase tracking-tighter {node.field.isObservable ? 'text-emerald-400' : 'text-slate-600 group-hover/obs:text-slate-400'} transition-colors">Obs</span>
+                        </label>
+
+                        {#if node.field.isObservable}
+                            <div class="relative group/obstype">
+                                <select 
+                                    bind:value={node.field.observableTypeId}
+                                    class="appearance-none bg-slate-900 border border-emerald-900/30 hover:border-emerald-500/50 text-emerald-400 text-[9px] pl-1.5 pr-5 py-0.5 rounded outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all cursor-pointer font-bold"
+                                >
+                                    {#each Object.entries(OBSERVABLE_TYPE_NAMES) as [id, name]}
+                                        <option value={Number(id)}>{name} ({id})</option>
+                                    {/each}
+                                </select>
+                                <div class="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-700">
+                                    <svg class="w-2 h-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </div>
+                            </div>
+                        {/if}
                     </div>
                 {/if}
 

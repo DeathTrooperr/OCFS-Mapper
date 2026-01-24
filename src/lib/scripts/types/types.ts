@@ -3,6 +3,8 @@ export interface SchemaField {
     type: string;
     enumValues: string;
     example?: any;
+    isObservable?: boolean;
+    observableTypeId?: number;
 }
 
 export interface AttributeMapping {
@@ -10,7 +12,6 @@ export interface AttributeMapping {
     staticValue?: string;
     enumMapping: Record<string, string>;
     observableTypeId?: number;
-    isObservableOverride?: boolean;
 }
 
 export interface ClassMapping {

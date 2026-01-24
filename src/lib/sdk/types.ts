@@ -5,7 +5,6 @@ export interface AttributeMapping {
     isEnum?: boolean;
     isNumber?: boolean;
     observableTypeId?: number;
-    isObservableOverride?: boolean;
     ocsfType?: string;
 }
 

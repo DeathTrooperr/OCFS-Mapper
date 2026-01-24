@@ -1,4 +1,5 @@
 import type { SchemaField, DeterminingField, OCSFSchemaData, AttributeMapping, OCSFAttribute } from '$lib/scripts/types/types.ts';
+import { detectObservableTypeId } from '$lib/sdk/observables';
 
 export const KNOWN_BASE_TYPES = [
     'integer_t', 'long_t', 'float_t', 'double_t', 'boolean_t', 'timestamp_t',
@@ -61,12 +62,16 @@ export function parseSchema(jsonInput: string): SchemaField[] {
                 const path = prefix ? `${prefix}.${key}` : key;
                 const value = obj[key];
                 const type = Array.isArray(value) ? 'array' : typeof value;
+                const example = type !== 'object' && type !== 'array' ? value : undefined;
+                const observableTypeId = detectObservableTypeId(example);
                 
                 fields.push({
                     name: path,
                     type: type,
                     enumValues: '',
-                    example: type !== 'object' && type !== 'array' ? value : undefined
+                    example: example,
+                    isObservable: observableTypeId !== null,
+                    observableTypeId: observableTypeId !== null ? observableTypeId : undefined
                 });
 
                 if (type === 'object' && value !== null) {
@@ -229,11 +234,17 @@ export function getMappingsForClass(
             const isEnum = !!(targetAttr && targetAttr.enum);
             const isNumber = !!(targetAttr && ['integer_t', 'long_t', 'float_t', 'double_t', 'timestamp_t'].includes(targetAttr.type));
             
-            // Use override if specified, otherwise use default from schema
+            // Look up observable info from source field if mapped
             let observableTypeId = undefined;
-            if (m?.isObservableOverride) {
-                observableTypeId = m.observableTypeId;
-            } else if (targetAttr?.observable !== undefined) {
+            if (effectiveSource) {
+                const sf = schemaFields.find(f => f.name === effectiveSource);
+                if (sf?.isObservable) {
+                    observableTypeId = sf.observableTypeId;
+                }
+            }
+
+            // Fallback to schema default if not explicitly tagged at source
+            if (observableTypeId === undefined && targetAttr?.observable !== undefined) {
                 observableTypeId = targetAttr.observable;
             }
 
@@ -244,7 +255,6 @@ export function getMappingsForClass(
                 isEnum: isEnum,
                 isNumber: isNumber,
                 observableTypeId: observableTypeId,
-                isObservableOverride: m?.isObservableOverride,
                 ocsfType: targetAttr?.type
             };
         }
@@ -293,7 +303,8 @@ export function getMappingsForClass(
         for (const sf of unmappedFields) {
             result[`unmapped.${sf.name}`] = {
                 source: sf.name,
-                isEnum: false
+                isEnum: false,
+                observableTypeId: sf.isObservable ? sf.observableTypeId : undefined
             };
         }
     }

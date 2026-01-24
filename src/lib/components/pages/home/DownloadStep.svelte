@@ -14,7 +14,7 @@
     }
 </script>
 
-<div class="h-full flex flex-col space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+<div class="min flex flex-col space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
     <div class="flex-1 min-h-0 bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-y-auto">
         <div class="px-8 py-12 flex flex-col items-center text-center space-y-8">
             <div class="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center">

@@ -127,15 +127,20 @@ export function parseOCSF(input: any, config: ParserConfig): any {
         // Handle automatic mappings
         if (m.source === '' && m.static === undefined) {
             if (ocsfPath === 'raw_data') {
-                val = input;
+                val = inputStr;
             } else if (ocsfPath === 'raw_data_hash') {
-                // Simple hash for demonstration, replace with SHA-256 in production if needed
+                // Simple hash for demonstration
                 let hash = 0;
                 for (let i = 0; i < inputStr.length; i++) {
                     hash = ((hash << 5) - hash) + inputStr.charCodeAt(i);
                     hash |= 0;
                 }
-                val = Math.abs(hash).toString(16).padStart(8, '0');
+                const hashVal = Math.abs(hash).toString(16).padStart(8, '0');
+                val = {
+                    algorithm_id: 99,
+                    algorithm: 'Internal Hash',
+                    value: hashVal
+                };
             } else if (ocsfPath === 'raw_data_size') {
                 val = inputSize;
             } else if (ocsfPath === 'observables') {
@@ -177,17 +182,12 @@ export function parseOCSF(input: any, config: ParserConfig): any {
             const addObservable = (v: any, path: string, mapping: AttributeMapping) => {
                 if (v === null || v === undefined) return;
                 
-                // Only pull from raw data (source is present) or if it's an explicit override
-                if (mapping.source === undefined && !mapping.isObservableOverride) return;
+                // Only pull from raw data (source is present)
+                if (mapping.source === undefined) return;
 
-                let typeId: number | null = null;
-                if (mapping.isObservableOverride) {
-                    typeId = mapping.observableTypeId ?? null;
-                } else {
-                    typeId = mapping.observableTypeId ?? 
-                             (mapping.ocsfType ? OCSF_TYPE_TO_OBSERVABLE[mapping.ocsfType] : null) ??
-                             detectObservableTypeId(v);
-                }
+                const typeId = mapping.observableTypeId ?? 
+                               (mapping.ocsfType ? OCSF_TYPE_TO_OBSERVABLE[mapping.ocsfType] : null) ??
+                               detectObservableTypeId(v);
 
                 if (typeId !== null && typeId !== undefined) {
                     const observable: any = {
