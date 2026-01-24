@@ -63,7 +63,7 @@ export function parseSchema(jsonInput: string): SchemaField[] {
                 const value = obj[key];
                 const type = Array.isArray(value) ? 'array' : typeof value;
                 const example = type !== 'object' && type !== 'array' ? value : undefined;
-                const observableTypeId = detectObservableTypeId(example);
+                const observableTypeId = detectObservableTypeId(example, path);
                 
                 fields.push({
                     name: path,

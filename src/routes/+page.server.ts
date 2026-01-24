@@ -1,6 +1,6 @@
 import { OCSFSchema } from '../lib/server/ocsf/loader.js';
 
-export const load = async () => {
+export const load = async ({ platform }) => {
     const rawFiles = import.meta.glob('../lib/server/ocsf/data/**/*.json', { eager: true });
     
     const files: Record<string, any> = {};
@@ -11,6 +11,7 @@ export const load = async () => {
 
     const loader = new OCSFSchema(files);
     return {
-        ocsf: loader.getSchemaData()
+        ocsf: loader.getSchemaData(),
+        enableAI: platform?.env?.ENABLE_AI_ASSISTANT === 'true'
     };
 };

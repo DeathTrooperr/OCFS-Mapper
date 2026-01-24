@@ -7,14 +7,19 @@ export interface ObservablePattern {
 export const OBSERVABLE_PATTERNS: ObservablePattern[] = [
     { typeId: 2, name: 'IP Address', regex: /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/ },
     { typeId: 2, name: 'IPv6 Address', regex: /^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$/ },
+    { typeId: 12, name: 'Subnet', regex: /^(?:(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(?:[0-9]|[12][0-9]|3[0-2]))$/ },
     { typeId: 3, name: 'MAC Address', regex: /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/ },
     { typeId: 5, name: 'Email Address', regex: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/ },
     { typeId: 6, name: 'URL', regex: /^https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&\/=]*)$/ },
+    { typeId: 16, name: 'User Agent', regex: /^Mozilla\/[0-9]\.[0-9].+$/ },
     { typeId: 8, name: 'MD5 Hash', regex: /^[a-fA-F0-9]{32}$/ },
     { typeId: 8, name: 'SHA-1 Hash', regex: /^[a-fA-F0-9]{40}$/ },
     { typeId: 8, name: 'SHA-256 Hash', regex: /^[a-fA-F0-9]{64}$/ },
+    { typeId: 8, name: 'SHA-512 Hash', regex: /^[a-fA-F0-9]{128}$/ },
+    { typeId: 45, name: 'Unix Path', regex: /^\/([^\/\0]+\/)+[^\/\0]*$/ },
+    { typeId: 45, name: 'Windows Path', regex: /^[a-zA-Z]:\\(?:[^\\/:*?"<>|]+\\)*[^\\/:*?"<>|]*$/ },
+    { typeId: 46, name: 'Registry Key', regex: /^(HKEY_LOCAL_MACHINE|HKLM|HKEY_CURRENT_USER|HKCU|HKEY_CLASSES_ROOT|HKCR|HKEY_USERS|HKU|HKEY_CURRENT_CONFIG|HKCC)\\.+/i },
     { typeId: 1, name: 'Hostname', regex: /^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$/ },
-    { typeId: 12, name: 'Subnet', regex: /^(?:(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(?:[0-9]|[12][0-9]|3[0-2]))$/ },
 ];
 
 export const OCSF_TYPE_TO_OBSERVABLE: Record<string, number> = {
@@ -33,6 +38,8 @@ export const OCSF_TYPE_TO_OBSERVABLE: Record<string, number> = {
     'subnet_t': 12,
     'country_code_t': 14,
     'file_path_t': 45,
+    'registry_key_t': 46,
+    'registry_value_t': 29,
     // Object types
     'user': 21,
     'email': 22,
@@ -44,7 +51,9 @@ export const OCSF_TYPE_TO_OBSERVABLE: Record<string, number> = {
     'registry_key': 28,
     'registry_value': 29,
     'fingerprint': 30,
-    'endpoint': 20
+    'endpoint': 20,
+    'device': 47,
+    'network_endpoint': 48
 };
 
 export const OBSERVABLE_TYPE_NAMES: Record<number, string> = {
@@ -100,13 +109,48 @@ export const OBSERVABLE_TYPE_NAMES: Record<number, string> = {
     99: 'Other'
 };
 
-export function detectObservableTypeId(value: any): number | null {
-    if (typeof value !== 'string') return null;
+export function detectObservableTypeId(value: any, key?: string): number | null {
+    if (value === null || value === undefined) return null;
     
+    const str = String(value);
+    if (str.length === 0) return null;
+
+    const normalizedKey = key?.toLowerCase() || '';
+
+    // 1. High confidence patterns (IP, MAC, Email, URL, Hash, Path)
+    // These are specific enough that we can trust them regardless of the key
     for (const pattern of OBSERVABLE_PATTERNS) {
-        if (pattern.regex.test(value)) {
+        if (pattern.typeId === 1) continue; // Skip Hostname for now
+        if (pattern.regex.test(str)) {
             return pattern.typeId;
         }
+    }
+
+    // 2. Key-based heuristics for ambiguous values
+    // If the value matches Hostname regex (broad), use the key to disambiguate
+    const hostnamePattern = OBSERVABLE_PATTERNS.find(p => p.typeId === 1);
+    if (hostnamePattern && hostnamePattern.regex.test(str)) {
+        // First try key hints as they are more specific than just checking for a dot
+        if (normalizedKey) {
+            const USER_KEYWORDS = ['user', 'username', 'login', 'account', 'actor', 'subject', 'principal'];
+            const HOST_KEYWORDS = ['host', 'hostname', 'server', 'node', 'device', 'endpoint', 'computer', 'fqdn', 'domain'];
+            const FILE_KEYWORDS = ['file', 'path', 'filename', 'filepath', 'exe', 'process'];
+
+            // Split path into parts and check from right to left (leaf to root)
+            // This ensures that 'user.host' is treated as a host, and 'host.user' as a user.
+            const parts = normalizedKey.split(/[\._]/).reverse();
+            for (const part of parts) {
+                if (USER_KEYWORDS.some(k => part.includes(k))) return 4; // User Name
+                if (HOST_KEYWORDS.some(k => part.includes(k))) return 1; // Hostname
+                if (FILE_KEYWORDS.some(k => part.includes(k))) return 7; // File Name
+            }
+        }
+
+        // If no key hint, but it has a dot, it's very likely a hostname or domain
+        if (str.includes('.')) return 1;
+        
+        // If no key hint and no dot, it's too ambiguous to call it a Hostname (e.g. "admin", "success", "info")
+        return null;
     }
     
     return null;

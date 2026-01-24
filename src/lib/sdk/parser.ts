@@ -187,7 +187,7 @@ export function parseOCSF(input: any, config: ParserConfig): any {
 
                 const typeId = mapping.observableTypeId ?? 
                                (mapping.ocsfType ? OCSF_TYPE_TO_OBSERVABLE[mapping.ocsfType] : null) ??
-                               detectObservableTypeId(v);
+                               detectObservableTypeId(v, mapping.source);
 
                 if (typeId !== null && typeId !== undefined) {
                     const observable: any = {

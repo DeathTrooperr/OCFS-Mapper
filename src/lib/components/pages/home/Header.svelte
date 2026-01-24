@@ -1,5 +1,6 @@
 <script lang="ts">
     export let currentMapName: string;
+    export let currentMapId: string;
     export let recentMaps: any[];
     export let onSave: () => void;
     export let onLoad: (map: any) => void;
@@ -10,6 +11,7 @@
 
     let showSavedIndicator = false;
     let indicatorTimer: any;
+    let showDropdown = false;
 
     function handleSave() {
         onSave();
@@ -18,6 +20,27 @@
         indicatorTimer = setTimeout(() => {
             showSavedIndicator = false;
         }, 2000);
+    }
+
+    function selectMap(map: any) {
+        onLoad(map);
+        showDropdown = false;
+    }
+
+    function clickOutside(node: HTMLElement) {
+        const handleClick = (event: MouseEvent) => {
+            if (node && !node.contains(event.target as Node) && !event.defaultPrevented) {
+                node.dispatchEvent(new CustomEvent('click_outside', { detail: node }));
+            }
+        };
+
+        document.addEventListener('click', handleClick, true);
+
+        return {
+            destroy() {
+                document.removeEventListener('click', handleClick, true);
+            }
+        };
     }
 </script>
 
@@ -58,56 +81,82 @@
                 New
             </button>
 
-            <div class="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-xl p-1 shadow-inner">
+            <div class="relative flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-xl p-1 shadow-inner" use:clickOutside on:click_outside={() => showDropdown = false}>
                 <input 
                     type="text" 
                     bind:value={currentMapName}
-                    class="bg-transparent border-none text-white text-sm px-4 py-1.5 focus:outline-none min-w-[180px] sm:min-w-[240px]"
+                    class="bg-transparent border-none text-white text-sm px-4 py-1.5 focus:outline-none flex-1 min-w-[150px]"
                     placeholder="Map name..."
                 />
-                <button 
-                    on:click={handleSave}
-                    class="relative bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold px-6 py-2 rounded-lg transition-all flex items-center gap-2"
-                >
-                    {#if showSavedIndicator}
-                        <span class="absolute -top-10 left-1/2 -translate-x-1/2 bg-green-600 text-white text-[10px] py-1 px-2 rounded shadow-lg animate-bounce whitespace-nowrap">Saved!</span>
-                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                
+                {#if recentMaps.length > 0}
+                    <button 
+                        on:click={() => showDropdown = !showDropdown}
+                        class="p-1.5 text-slate-400 hover:text-white transition-colors rounded-lg hover:bg-slate-800"
+                        title="Load Recent Map"
+                    >
+                        <svg class="w-5 h-5 transition-transform {showDropdown ? 'rotate-180' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                         </svg>
-                    {:else}
-                        Save
+                    </button>
+                {/if}
+
+                <div class="flex items-center gap-1">
+                    <button 
+                        on:click={handleSave}
+                        class="relative bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold px-6 py-2 rounded-lg transition-all flex items-center gap-2"
+                    >
+                        {#if showSavedIndicator}
+                            <span class="absolute -top-10 left-1/2 -translate-x-1/2 bg-green-600 text-white text-[10px] py-1 px-2 rounded shadow-lg animate-bounce whitespace-nowrap">Saved!</span>
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                            </svg>
+                        {:else}
+                            Save
+                        {/if}
+                    </button>
+
+                    {#if currentMapId}
+                        <button 
+                            on:click={() => onDelete(currentMapId)}
+                            class="p-2 text-slate-500 hover:text-red-400 transition-colors rounded-lg hover:bg-red-400/10"
+                            title="Delete Current Map"
+                        >
+                            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </button>
                     {/if}
-                </button>
+                </div>
+
+                {#if showDropdown}
+                    <div class="absolute top-full left-0 right-0 mt-2 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden py-1 animate-in fade-in zoom-in-95 duration-100">
+                        {#each recentMaps as map}
+                            <div class="group flex items-center px-2 hover:bg-slate-800 transition-colors">
+                                <button 
+                                    on:click={() => selectMap(map)}
+                                    class="flex-1 text-left px-3 py-2.5 text-xs text-slate-300 group-hover:text-white flex flex-col gap-0.5 min-w-0"
+                                >
+                                    <span class="font-bold truncate">{map.name}</span>
+                                    {#if map.timestamp}
+                                        <span class="text-[10px] text-slate-500">{new Date(map.timestamp).toLocaleString()}</span>
+                                    {/if}
+                                </button>
+                                <button 
+                                    on:click|stopPropagation={() => onDelete(map.id)}
+                                    class="p-2 text-slate-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                                    title="Delete Map"
+                                >
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                </button>
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
             </div>
         </div>
-        
-        {#if recentMaps.length > 0}
-            <div class="flex items-center gap-3 text-xs overflow-x-auto pb-1 no-scrollbar lg:justify-end">
-                <span class="text-slate-500 font-bold uppercase tracking-wider whitespace-nowrap">Recent Maps:</span>
-                <div class="flex items-center gap-2">
-                    {#each recentMaps as map}
-                        <div class="group flex items-center bg-slate-900/50 hover:bg-slate-800 rounded-lg border border-slate-800 overflow-hidden transition-all hover:border-slate-600">
-                            <button 
-                                on:click={() => onLoad(map)}
-                                class="px-3 py-1.5 text-slate-400 hover:text-blue-400 border-r border-slate-800 max-w-[120px] truncate transition-colors font-medium"
-                                title={map.name}
-                            >
-                                {map.name}
-                            </button>
-                            <button 
-                                on:click={() => onDelete(map.id)}
-                                class="px-2 py-1.5 text-slate-600 hover:text-red-400 hover:bg-red-400/10 transition-all"
-                                title="Delete"
-                            >
-                                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </div>
-                    {/each}
-                </div>
-            </div>
-        {/if}
     </div>
 </header>
 

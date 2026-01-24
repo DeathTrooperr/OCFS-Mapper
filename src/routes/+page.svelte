@@ -19,7 +19,7 @@
     export let data: PageData;
     $: ocsf = (data as any).ocsf as OCSFSchemaData;
 
-    const ENABLE_AI_ASSISTANT = false;
+    $: ENABLE_AI_ASSISTANT = data.enableAI;
 
     let jsonInput = '';
     let schemaFields: SchemaField[] = [];
@@ -163,7 +163,9 @@
         
         // Reset state for the loaded map
         activeMappingIndex = 'default';
-        if (!isInitialLoad) currentStep = 1;
+        if (!isInitialLoad) {
+            currentStep = schemaFields.length > 0 ? 1 : 0;
+        }
 
         // Update timestamp for "recent" sorting
         saveCurrentMap();
@@ -213,6 +215,7 @@
     <div class="flex-none p-4 md:p-8 pb-0">
         <Header 
             bind:currentMapName 
+            {currentMapId}
             {recentMaps} 
             onSave={saveCurrentMap}
             onLoad={loadMap}

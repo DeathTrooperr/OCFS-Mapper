@@ -332,7 +332,10 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <div class="text-[11px] text-blue-300">
-                            <p class="font-bold mb-1 text-blue-200">Automated Observables</p>
+                            <div class="flex items-center gap-2 mb-1">
+                                <p class="font-bold text-blue-200">Automated Observables</p>
+                                <span class="px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 text-[9px] font-bold uppercase tracking-tighter border border-emerald-500/30">Beta</span>
+                            </div>
                             This array is automatically populated based on other mapped fields that have the <span class="text-emerald-400 font-bold">Obs</span> badge. Expand this row to see all automatically included fields.
                         </div>
                     </div>
@@ -703,7 +706,10 @@
                         {:else if isObservables}
                             <div class="space-y-3 pt-2">
                                 <div class="flex items-center justify-between">
-                                    <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Automated Observables</label>
+                                    <div class="flex items-center gap-2">
+                                        <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Automated Observables</label>
+                                        <span class="px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 text-[8px] font-bold uppercase tracking-tighter border border-emerald-500/30">Beta</span>
+                                    </div>
                                     <span class="text-[10px] text-slate-600 italic">Fields automatically included in the observables array</span>
                                 </div>
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
