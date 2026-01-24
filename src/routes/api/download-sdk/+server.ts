@@ -7,6 +7,8 @@ import indexTs from '$lib/sdk/index.ts?raw';
 import parserTs from '$lib/sdk/parser.ts?raw';
 // @ts-ignore
 import typesTs from '$lib/sdk/types.ts?raw';
+// @ts-ignore
+import observablesTs from '$lib/sdk/observables.ts?raw';
 
 export const POST: RequestHandler = async ({ request }) => {
     try {
@@ -17,6 +19,7 @@ export const POST: RequestHandler = async ({ request }) => {
         zip.file('ocsf-sdk/index.ts', indexTs);
         zip.file('ocsf-sdk/parser.ts', parserTs);
         zip.file('ocsf-sdk/types.ts', `${typesTs}\n\n${dynamicTypes}`);
+        zip.file('ocsf-sdk/observables.ts', observablesTs);
 
         const content = await zip.generateAsync({ type: 'uint8array' });
 

@@ -8,49 +8,27 @@ export const KNOWN_BASE_TYPES = [
 ];
 
 export function isTypeCompatible(attr: OCSFAttribute, schemaField: SchemaField): boolean {
-    if (attr.is_array) {
-        return schemaField.type === 'array';
-    }
+    const isAttrArray = !!attr.is_array;
+    const isSourceArray = schemaField.type === 'array';
+    const isAttrObject = attr.type === 'object_t' || (attr.type !== 'json_t' && !KNOWN_BASE_TYPES.includes(attr.type));
+    const isSourceObject = schemaField.type === 'object';
+
+    // json_t can take anything
+    if (attr.type === 'json_t') return true;
+
+    // Don't allow mapping array to scalar
+    if (isSourceArray && !isAttrArray) return false;
     
-    if (schemaField.type === 'array') {
-        return !!attr.is_array;
-    }
+    // Don't allow mapping object to scalar or vice-versa
+    if (isSourceObject !== isAttrObject) return false;
 
-    // Enum compatibility: Enums can be mapped from enum, string, or number source fields
-    if (attr.enum) {
-        return schemaField.type === 'enum' || schemaField.type === 'string' || schemaField.type === 'number';
-    }
+    // For arrays of objects, we disable top-level mapping in the UI, 
+    // so we return false here to hide it from the "Field" dropdown.
+    if (isAttrArray && isAttrObject) return false;
 
-    switch (attr.type) {
-        case 'integer_t':
-        case 'long_t':
-        case 'float_t':
-        case 'double_t':
-        case 'timestamp_t':
-            return schemaField.type === 'number';
-        case 'boolean_t':
-            return schemaField.type === 'boolean';
-        case 'string_t':
-        case 'email_t':
-        case 'ip_t':
-        case 'mac_t':
-        case 'url_t':
-        case 'hostname_t':
-        case 'file_name_t':
-        case 'file_path_t':
-        case 'bytestring_t':
-        case 'ipv4_t':
-        case 'ipv6_t':
-            // Allow mapping enum to string-like OCSF attributes
-            return schemaField.type === 'string' || schemaField.type === 'enum';
-        case 'json_t':
-            return true; // json_t can be any type
-        case 'object_t':
-            return schemaField.type === 'object';
-        default:
-            // For OCSF Classes or other types, we expect an object
-            return schemaField.type === 'object';
-    }
+    // For all other combinations (scalar to scalar, scalar to array, array to array), allow it.
+    // This satisfies the requirement: "unless the value is some form of array or sub object or array allow any value to be selected"
+    return true;
 }
 
 export function getTsType(ocsfType: string, attr?: OCSFAttribute, ocsfData?: OCSFSchemaData) {
@@ -77,19 +55,26 @@ export function parseSchema(jsonInput: string): SchemaField[] {
         const parsed = JSON.parse(jsonInput);
         const fields: SchemaField[] = [];
         function traverse(obj: any, prefix = '') {
+            if (obj === null || typeof obj !== 'object') return;
+            
             for (const key in obj) {
                 const path = prefix ? `${prefix}.${key}` : key;
                 const value = obj[key];
                 const type = Array.isArray(value) ? 'array' : typeof value;
+                
                 fields.push({
                     name: path,
                     type: type,
-                    enumValues: ''
+                    enumValues: '',
+                    example: type !== 'object' && type !== 'array' ? value : undefined
                 });
+
                 if (type === 'object' && value !== null) {
                     traverse(value, path);
-                } else if (type === 'array' && value.length > 0 && typeof value[0] === 'object' && value[0] !== null) {
-                    traverse(value[0], path + '[]');
+                } else if (type === 'array' && value.length > 0) {
+                    if (typeof value[0] === 'object' && value[0] !== null) {
+                        traverse(value[0], path + '[]');
+                    }
                 }
             }
         }
@@ -104,6 +89,7 @@ export function getMappingsForClass(
     mappings: Record<string, AttributeMapping>, 
     targetClass: any, 
     schemaFields: SchemaField[],
+    ocsfData?: OCSFSchemaData,
     baseMappings?: Record<string, AttributeMapping>
 ) {
     const result: Record<string, any> = {};
@@ -111,6 +97,25 @@ export function getMappingsForClass(
 
     const allPaths = new Set([...Object.keys(mappings), ...Object.keys(baseMappings || {})]);
     const mappedSources = new Set<string>();
+
+    const resolveAttr = (path: string): OCSFAttribute | undefined => {
+        if (!ocsfData) return targetClass.attributes[path];
+        
+        const parts = path.split('.');
+        let currentClass = targetClass;
+        let attr: OCSFAttribute | undefined;
+
+        for (let i = 0; i < parts.length; i++) {
+            let partName = parts[i].replace(/\[\d*\]$/, '');
+            
+            attr = currentClass.attributes[partName];
+            if (i < parts.length - 1) {
+                if (!attr || !ocsfData.classes[attr.type]) return undefined;
+                currentClass = ocsfData.classes[attr.type];
+            }
+        }
+        return attr;
+    };
 
     for (const path of allPaths) {
         if (path === 'unmapped' || path === 'raw_data' || path === 'raw_data_hash' || path === 'raw_data_size' || path === 'observables') continue;
@@ -130,8 +135,9 @@ export function getMappingsForClass(
 
         if (effectiveSource || effectiveStatic !== undefined) {
             if (effectiveSource) mappedSources.add(effectiveSource);
-            const targetAttr = targetClass.attributes[path];
+            const targetAttr = resolveAttr(path);
             const isEnum = !!(targetAttr && targetAttr.enum);
+            const isNumber = !!(targetAttr && ['integer_t', 'long_t', 'float_t', 'double_t', 'timestamp_t'].includes(targetAttr.type));
             
             // Use override if specified, otherwise use default from schema
             let observableTypeId = undefined;
@@ -146,8 +152,10 @@ export function getMappingsForClass(
                 static: effectiveStatic,
                 enumMapping: effectiveEnumMapping,
                 isEnum: isEnum,
+                isNumber: isNumber,
                 observableTypeId: observableTypeId,
-                isObservableOverride: m?.isObservableOverride
+                isObservableOverride: m?.isObservableOverride,
+                ocsfType: targetAttr?.type
             };
         }
     }
@@ -213,13 +221,13 @@ export function prepareParserConfig(
     defaultMappings: Record<string, AttributeMapping>
 ) {
     if (useConditionalClass && classDeterminingFields.length > 0) {
-        const defaultMappingObj = getMappingsForClass(defaultMappings, ocsfData.classes[selectedClass], schemaFields);
+        const defaultMappingObj = getMappingsForClass(defaultMappings, ocsfData.classes[selectedClass], schemaFields, ocsfData);
         
         const conditionalMappings = classDeterminingFields.flatMap(f => 
             f.mappings.map(m => ({
                 field: f.name,
                 value: m.enumValue,
-                mapping: getMappingsForClass(m.mappings, ocsfData.classes[m.selectedClass], schemaFields, defaultMappings),
+                mapping: getMappingsForClass(m.mappings, ocsfData.classes[m.selectedClass], schemaFields, ocsfData, defaultMappings),
                 className: m.selectedClass,
                 categoryName: m.selectedCategory
             }))
@@ -232,7 +240,7 @@ export function prepareParserConfig(
             selectedCategory
         };
     } else {
-        const mappingObj = getMappingsForClass(defaultMappings, ocsfData.classes[selectedClass], schemaFields);
+        const mappingObj = getMappingsForClass(defaultMappings, ocsfData.classes[selectedClass], schemaFields, ocsfData);
         return { 
             defaultMapping: mappingObj,
             selectedClass,

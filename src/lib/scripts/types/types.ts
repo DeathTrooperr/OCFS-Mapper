@@ -2,6 +2,7 @@ export interface SchemaField {
     name: string;
     type: string;
     enumValues: string;
+    example?: any;
 }
 
 export interface AttributeMapping {

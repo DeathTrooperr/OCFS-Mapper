@@ -2,6 +2,7 @@
     import { createEventDispatcher } from "svelte";
     import type { SchemaField, AttributeMapping, OCSFSchemaData } from "$lib/scripts/types/types";
     import { isTypeCompatible, getTsType } from "$lib/scripts/pages/home/mapping-utils";
+    import { OCSF_TYPE_TO_OBSERVABLE, OBSERVABLE_TYPE_NAMES } from "$lib/sdk/observables";
     export let schemaFields: SchemaField[];
     export let targetClass: any;
     export let title: string;
@@ -14,6 +15,7 @@
 
     let activeAttr: string | null = null;
     let searchQuery = "";
+    let instanceCounts: Record<string, number> = {};
 
     function toggleAttr(name: string) {
         activeAttr = activeAttr === name ? null : name;
@@ -23,7 +25,63 @@
         dispatch('change');
     }
 
-    function setSourceType(attrName: string, type: 'none' | 'field' | 'static') {
+    function getInstanceIndices(attrName: string, isArray: boolean) {
+        if (!isArray) return [null];
+        
+        const mappedIndices = new Set<string>();
+        Object.keys(allMappings).forEach(k => {
+            if (k.startsWith(`${attrName}[`)) {
+                // Escape special characters in attrName for Regex
+                const escapedName = attrName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const match = k.match(new RegExp(`^${escapedName}\\[(\\d*)\\]`));
+                if (match) mappedIndices.add(match[1]);
+            }
+        });
+        
+        const indices: (string | null)[] = Array.from(mappedIndices).sort((a, b) => {
+            if (a === '') return -1;
+            if (b === '') return 1;
+            return parseInt(a) - parseInt(b);
+        });
+        
+        if (indices.length === 0) indices.push(''); // Default to []
+        
+        const count = instanceCounts[attrName] || 0;
+        let found = 0;
+        let i = 0;
+        while (found < count) {
+            if (!indices.includes(String(i))) {
+                indices.push(String(i));
+                found++;
+            }
+            i++;
+            if (i > 20) break; 
+        }
+        
+        return indices.sort((a, b) => {
+            if (a === null || b === null) return 0;
+            if (a === '') return -1;
+            if (b === '') return 1;
+            return parseInt(a) - parseInt(b);
+        });
+    }
+
+    function removeInstance(attrName: string, idx: string) {
+        const prefix = `${attrName}[${idx}]`;
+        Object.keys(mappings).forEach(k => {
+            if (k.startsWith(prefix)) {
+                delete mappings[k];
+            }
+        });
+        mappings = { ...mappings };
+        if (instanceCounts[attrName] > 0) {
+            instanceCounts[attrName]--;
+            instanceCounts = instanceCounts;
+        }
+        handleChange();
+    }
+
+    function setSourceType(attrName: string, type: 'none' | 'field' | 'static', attr?: any) {
         if (!mappings[attrName]) mappings[attrName] = { enumMapping: {} };
         
         if (type === 'none') {
@@ -32,8 +90,8 @@
         } else if (type === 'field') {
             delete mappings[attrName].staticValue;
             if (!mappings[attrName].sourceField) {
-                const attr = targetClass?.attributes[attrName];
-                const compatible = getCompatibleFields(attr);
+                const targetAttr = attr || targetClass?.attributes[attrName];
+                const compatible = getCompatibleFields(targetAttr);
                 mappings[attrName].sourceField = compatible[0]?.name || '';
             }
         } else if (type === 'static') {
@@ -45,10 +103,12 @@
     }
 
     $: filteredAttributes = targetClass ? Object.values(targetClass.attributes)
-        .filter((a: any) => 
-            a.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-            a.caption.toLowerCase().includes(searchQuery.toLowerCase())
-        )
+        .filter((a: any) => {
+            const query = searchQuery.toLowerCase();
+            const name = a.name.toLowerCase();
+            const caption = a.caption.toLowerCase();
+            return name.includes(query) || caption.includes(query) || query.startsWith(name + '.') || query.startsWith(name + '[');
+        })
         .sort((a: any, b: any) => {
             const reqOrder: Record<string, number> = { 'required': 0, 'recommended': 1, 'optional': 2 };
             const aReq = reqOrder[a.requirement || 'optional'] ?? 3;
@@ -68,33 +128,53 @@
     $: getSourceFieldInfo = (fieldName: string) => schemaFields.find(f => f.name === fieldName);
     $: getCompatibleFields = (attr: any) => schemaFields.filter(sf => isTypeCompatible(attr, sf));
     $: getObservableTypeName = (typeId: number) => {
-        if (!ocsfData?.types) return `ID: ${typeId}`;
-        const typeEntry = Object.entries(ocsfData.types).find(([_, t]) => (t as any).observable === typeId);
-        return typeEntry ? (typeEntry[1] as any).caption : `ID: ${typeId}`;
+        return OBSERVABLE_TYPE_NAMES[typeId] || `ID: ${typeId}`;
     };
 
     $: allMappings = isDefault ? mappings : { ...defaultMappings, ...mappings };
     $: mappedSourceFields = new Set(Object.values(allMappings).map(m => m.sourceField).filter(Boolean));
     
-    $: activeObservables = targetClass ? Object.values(targetClass.attributes)
-        .map((attr: any) => {
-            const m = getEffectiveMapping(attr.name);
+    const resolveAttr = (path: string): any => {
+        if (!ocsfData || !targetClass) return undefined;
+        
+        const parts = path.split('.');
+        let currentClass = targetClass;
+        let attr: any;
+
+        for (let i = 0; i < parts.length; i++) {
+            let partName = parts[i].replace(/\[\d*\]$/, '');
+            
+            attr = currentClass.attributes[partName];
+            if (i < parts.length - 1) {
+                if (!attr || !ocsfData.classes[attr.type]) return undefined;
+                currentClass = ocsfData.classes[attr.type];
+            }
+        }
+        return attr;
+    };
+
+    $: activeObservables = Object.entries(allMappings)
+        .map(([path, m]) => {
             const hasMapping = m?.sourceField || m?.staticValue !== undefined;
             if (!hasMapping) return null;
-            
+            if (path === 'unmapped' || path.startsWith('unmapped.')) return null;
+            if (path === 'raw_data' || path === 'raw_data_hash' || path === 'raw_data_size' || path === 'observables') return null;
+
+            const attr = resolveAttr(path);
             const isOverridden = m?.isObservableOverride;
-            const typeId = isOverridden ? m.observableTypeId : attr.observable;
+            const typeId = isOverridden ? m.observableTypeId : (attr?.observable ?? OCSF_TYPE_TO_OBSERVABLE[attr?.type]);
             
             if (typeId === undefined || typeId === null) return null;
             
             return {
-                name: attr.name,
-                caption: attr.caption,
+                name: path,
+                caption: attr?.caption || path,
                 typeId,
                 isOverridden
             };
         })
-        .filter(Boolean) : [];
+        .filter((o): o is { name: string, caption: string, typeId: number, isOverridden: boolean } => !!o)
+        .sort((a, b) => a.name.localeCompare(b.name));
 
     $: unmappedSourceFields = schemaFields.filter(sf => {
         if (sf.type === 'object') return false;
@@ -108,7 +188,73 @@
         }
         return true;
     });
+
+    $: observableTypes = ocsfData?.types ? Object.entries(ocsfData.types)
+        .filter(([_, t]: [string, any]) => t.observable !== undefined)
+        .sort((a: [string, any], b: [string, any]) => a[1].caption.localeCompare(b[1].caption))
+        : [];
 </script>
+
+{#snippet observableConfig(path, attr, m)}
+    {@const typeIdFromSchema = attr?.observable ?? OCSF_TYPE_TO_OBSERVABLE[attr?.type]}
+    {@const isMapped = m?.sourceField || m?.staticValue !== undefined}
+    
+    {#if isMapped || m?.isObservableOverride}
+        <div class="flex items-center justify-between px-3 py-2 bg-slate-900/50 border border-slate-800/50 rounded-xl">
+            <div class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 {typeIdFromSchema !== undefined ? 'bg-emerald-500' : 'bg-blue-500'} rounded-full"></span>
+                <span class="text-[10px] text-slate-400 font-medium">
+                    {typeIdFromSchema !== undefined ? 'OCSF Observable (Automated)' : 'Dynamic Observable Detection'}
+                </span>
+            </div>
+            <label class="flex items-center gap-2 cursor-pointer group">
+                <input 
+                    type="checkbox" 
+                    checked={m?.isObservableOverride || false}
+                    on:change={(e) => {
+                        if (!mappings[path]) mappings[path] = { enumMapping: {} };
+                        mappings[path].isObservableOverride = e.currentTarget.checked;
+                        if (e.currentTarget.checked && mappings[path].observableTypeId === undefined) {
+                            mappings[path].observableTypeId = typeIdFromSchema || 0;
+                        }
+                        mappings = { ...mappings };
+                        handleChange();
+                    }}
+                    class="w-3 h-3 rounded border-slate-700 bg-slate-950 text-blue-600 focus:ring-blue-500"
+                />
+                <span class="text-[9px] text-slate-500 group-hover:text-slate-400 transition-colors">Manual Override</span>
+            </label>
+        </div>
+
+        {#if m?.isObservableOverride}
+            <div class="flex items-center gap-3 bg-slate-900/50 p-3 rounded-xl border border-blue-500/20 animate-in fade-in zoom-in-95 duration-200">
+                <div class="flex-1">
+                    <div class="text-[10px] text-slate-500 mb-1">Override Type</div>
+                    <select 
+                        value={m?.observableTypeId}
+                        on:change={(e) => {
+                            if (!mappings[path]) mappings[path] = { enumMapping: {} };
+                            mappings[path].observableTypeId = e.currentTarget.value ? Number(e.currentTarget.value) : undefined;
+                            mappings = { ...mappings };
+                            handleChange();
+                        }}
+                        class="w-full bg-slate-950 border border-slate-800 text-xs p-2 rounded-lg outline-none text-slate-300 focus:ring-1 focus:ring-blue-500 transition-all"
+                    >
+                        <option value="">Disabled / None</option>
+                        {#each observableTypes as [_, tInfo]}
+                            <option value={tInfo.observable}>{tInfo.caption} ({tInfo.observable})</option>
+                        {/each}
+                        {#if observableTypes.length === 0 && typeIdFromSchema !== undefined}
+                            <option value={typeIdFromSchema}>Default ({typeIdFromSchema})</option>
+                        {/if}
+                        <option value={99}>Other (99)</option>
+                        <option value={0}>Unknown (0)</option>
+                    </select>
+                </div>
+            </div>
+        {/if}
+    {/if}
+{/snippet}
 
 <div class="space-y-4">
     <div class="flex flex-col md:flex-row md:items-center justify-between mb-4 px-2 gap-4">
@@ -170,9 +316,14 @@
             {@const dm = defaultMappings[attr.name]}
             {@const isInherited = !isDefault && !m?.sourceField && m?.staticValue === undefined && dm}
             {@const effective = isInherited ? dm : m}
+            {@const isObject = !!(ocsfData?.classes[attr.type])}
             {@const hasMapping = effective?.sourceField || effective?.staticValue !== undefined || isUnmapped || isRawData || isObservables}
-            {@const effectiveObservable = effective?.isObservableOverride ? effective.observableTypeId : attr.observable}
             {@const hasMappingForObs = effective?.sourceField || effective?.staticValue !== undefined}
+            {@const isEnum = !!attr.enum}
+            {@const hasEnumMappings = effective?.enumMapping && Object.keys(effective.enumMapping).length > 0}
+            {@const needsEnumMapping = isEnum && effective?.sourceField && !hasEnumMappings}
+            {@const typeIdFromSchema = attr.observable ?? OCSF_TYPE_TO_OBSERVABLE[attr.type]}
+            {@const effectiveObsId = effective?.isObservableOverride ? effective.observableTypeId : typeIdFromSchema}
             
             <div class="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden transition-all {hasMapping ? 'border-blue-500/30 shadow-lg shadow-blue-900/5' : 'hover:border-slate-700'}">
                 {#if isObservables}
@@ -197,15 +348,27 @@
                             {/if}
                             <span class="px-2 py-0.5 text-[9px] uppercase font-bold bg-slate-900 text-slate-500 rounded border border-slate-800">
                                 {attr.type}{attr.is_array ? '[]' : ''}
-                                {#if attr.enum} (Enum){/if}
                             </span>
                             
-                            {#if effectiveObservable !== undefined}
+                            {#if isEnum}
+                                <span 
+                                    class="px-2 py-0.5 text-[9px] uppercase font-black rounded border flex items-center gap-1 transition-all
+                                    {needsEnumMapping ? 'bg-amber-900/20 text-amber-500 border-amber-900/30 animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.1)]' : 'bg-purple-900/20 text-purple-500 border-purple-900/30'}"
+                                    title={needsEnumMapping ? 'Enum values must be mapped to OCSF constants' : 'OCSF Enum Attribute'}
+                                >
+                                    <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                        <path d="M4 6h16M4 12h16M4 18h16" />
+                                    </svg>
+                                    Enum {needsEnumMapping ? '(Mapping Required)' : ''}
+                                </span>
+                            {/if}
+                             
+                             {#if effectiveObsId !== undefined}
                                 <span 
                                     class="px-2 py-0.5 text-[9px] uppercase font-black rounded border flex items-center gap-1 transition-all
                                     {effective?.isObservableOverride ? 'bg-purple-900/20 text-purple-400 border-purple-900/30' : 'bg-emerald-900/20 text-emerald-500 border-emerald-900/30'}
                                     {!hasMappingForObs ? 'opacity-40 grayscale' : ''}" 
-                                    title="{effective?.isObservableOverride ? 'Manual' : 'Automated'} Observable: {getObservableTypeName(effectiveObservable)} (ID: {effectiveObservable}) {!hasMappingForObs ? '- Map this field to activate' : ''}"
+                                    title="{effective?.isObservableOverride ? 'Manual' : 'Automated'} Observable: {getObservableTypeName(effectiveObsId)} (ID: {effectiveObsId}) {!hasMappingForObs ? '- Map this field to activate' : ''}"
                                 >
                                     <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
                                         <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -219,30 +382,33 @@
                     </div>
 
                     <div class="flex flex-col sm:flex-row items-center gap-3">
-                        <div class="flex bg-slate-900 p-1 rounded-xl border border-slate-800">
-                            <button 
-                                on:click={() => setSourceType(attr.name, 'none')}
-                                class="px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all {!m?.sourceField && m?.staticValue === undefined && !isUnmapped && !isRawData && !isObservables ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'} disabled:opacity-30 disabled:cursor-not-allowed"
-                                disabled={isUnmapped || isRawData || isObservables}
-                            >
-                                {isDefault ? 'None' : 'Inherit'}
-                            </button>
-                            <button 
-                                on:click={() => setSourceType(attr.name, 'field')}
-                                class="px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all {m?.sourceField || isUnmapped || isRawData || isObservables ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'} disabled:opacity-30 disabled:cursor-not-allowed"
-                                disabled={isUnmapped || isRawData || isObservables || getCompatibleFields(attr).length === 0}
-                                title={isUnmapped || isRawData || isObservables ? "Automatic mapping" : (getCompatibleFields(attr).length === 0 ? "No compatible fields found in source" : "")}
-                            >
-                                {isUnmapped || isRawData || isObservables ? 'Auto' : 'Field'}
-                            </button>
-                            <button 
-                                on:click={() => setSourceType(attr.name, 'static')}
-                                class="px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all {m?.staticValue !== undefined ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'} disabled:opacity-30 disabled:cursor-not-allowed"
-                                disabled={isUnmapped || isRawData || isObservables}
-                            >
-                                Static
-                            </button>
-                        </div>
+                        {#if !isObject}
+                            <div class="flex bg-slate-900 p-1 rounded-xl border border-slate-800">
+                                <button 
+                                    on:click={() => setSourceType(attr.name, 'none')}
+                                    class="px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all {!m?.sourceField && m?.staticValue === undefined && !isUnmapped && !isRawData && !isObservables ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'} disabled:opacity-30 disabled:cursor-not-allowed"
+                                    disabled={isUnmapped || isRawData || isObservables}
+                                >
+                                    {isDefault ? 'None' : 'Inherit'}
+                                </button>
+                                <button 
+                                    on:click={() => setSourceType(attr.name, 'field')}
+                                    class="px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all {m?.sourceField || isUnmapped || isRawData || isObservables ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'} disabled:opacity-30 disabled:cursor-not-allowed"
+                                    disabled={isUnmapped || isRawData || isObservables || isObject || getCompatibleFields(attr).length === 0}
+                                    title={isUnmapped || isRawData || isObservables ? "Automatic mapping" : (isObject ? "Map child properties instead" : (getCompatibleFields(attr).length === 0 ? "No compatible fields found in source" : ""))}
+                                >
+                                    {isUnmapped || isRawData || isObservables ? 'Auto' : 'Field'}
+                                </button>
+                                <button 
+                                    on:click={() => setSourceType(attr.name, 'static')}
+                                    class="px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all {m?.staticValue !== undefined ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'} disabled:opacity-30 disabled:cursor-not-allowed"
+                                    disabled={isUnmapped || isRawData || isObservables || isObject}
+                                    title={isObject ? "Map child properties instead" : ""}
+                                >
+                                    Static
+                                </button>
+                            </div>
+                        {/if}
 
                         <div class="w-full sm:w-64 relative">
                             {#if isUnmapped}
@@ -266,39 +432,58 @@
                                     {/if}
                                 </div>
                             {:else if effective?.sourceField}
-                                <select 
-                                    bind:value={mappings[attr.name].sourceField}
-                                    on:change={handleChange}
-                                    disabled={isInherited}
-                                    class="w-full bg-slate-900 border border-slate-800 text-slate-200 text-sm p-2.5 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none appearance-none transition-all {isInherited ? 'opacity-50' : ''}"
-                                >
-                                    {#each getCompatibleFields(attr) as sf}
-                                        <option value={sf.name}>{sf.name} ({sf.type})</option>
-                                    {/each}
-                                </select>
-                            {:else if effective?.staticValue !== undefined}
-                                {#if attr.enum}
+                                <div class="space-y-1">
                                     <select 
-                                        bind:value={mappings[attr.name].staticValue}
+                                        bind:value={mappings[attr.name].sourceField}
                                         on:change={handleChange}
                                         disabled={isInherited}
-                                        class="w-full bg-slate-900 border border-slate-800 text-slate-200 text-sm p-2.5 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none appearance-none transition-all {isInherited ? 'opacity-50' : ''}"
+                                        class="w-full bg-slate-900 border border-slate-800 text-slate-200 text-sm p-2.5 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none appearance-none transition-all {isInherited ? 'opacity-50' : ''}"
                                     >
-                                        <option value="">Select OCSF Value...</option>
-                                        {#each Object.entries(attr.enum) as [eVal, eMeta]}
-                                            <option value={eVal}>{eMeta.caption} ({eVal})</option>
+                                        {#each getCompatibleFields(attr) as sf}
+                                            <option value={sf.name}>{sf.name} ({sf.type})</option>
                                         {/each}
                                     </select>
-                                {:else}
-                                    <input 
-                                        type="text"
-                                        bind:value={mappings[attr.name].staticValue}
-                                        on:input={handleChange}
-                                        disabled={isInherited}
-                                        placeholder="Enter static value..."
-                                        class="w-full bg-slate-900 border border-slate-800 text-slate-200 text-sm p-2.5 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all {isInherited ? 'opacity-50' : ''}"
-                                    />
-                                {/if}
+                                    {#if getSourceFieldInfo(effective.sourceField)?.example !== undefined}
+                                        <div class="px-2 text-[10px] text-slate-500 italic truncate" title="Example: {JSON.stringify(getSourceFieldInfo(effective.sourceField).example)}">
+                                            Ex: {JSON.stringify(getSourceFieldInfo(effective.sourceField).example)}
+                                        </div>
+                                    {/if}
+                                </div>
+                            {:else if effective?.staticValue !== undefined}
+                                <div class="space-y-1">
+                                    {#if attr.enum}
+                                        <select 
+                                            bind:value={mappings[attr.name].staticValue}
+                                            on:change={handleChange}
+                                            disabled={isInherited}
+                                            class="w-full bg-slate-900 border border-slate-800 text-slate-200 text-sm p-2.5 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none appearance-none transition-all {isInherited ? 'opacity-50' : ''}"
+                                        >
+                                            <option value="">Select OCSF Value...</option>
+                                            {#each Object.entries(attr.enum) as [eVal, eMeta]}
+                                                <option value={eVal}>{eMeta.caption} ({eVal})</option>
+                                            {/each}
+                                        </select>
+                                        {#if effective?.staticValue && attr.enum[effective.staticValue]?.description}
+                                            <div class="px-2 text-[10px] text-slate-500 italic leading-tight">
+                                                {attr.enum[effective.staticValue].description}
+                                            </div>
+                                        {/if}
+                                    {:else}
+                                        <input 
+                                            type="text"
+                                            bind:value={mappings[attr.name].staticValue}
+                                            on:input={handleChange}
+                                            disabled={isInherited}
+                                            placeholder="Enter static value..."
+                                            class="w-full bg-slate-900 border border-slate-800 text-slate-200 text-sm p-2.5 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all {isInherited ? 'opacity-50' : ''}"
+                                        />
+                                    {/if}
+                                </div>
+                            {:else if isObject}
+                                <div class="w-full bg-blue-900/10 border border-blue-800/30 text-blue-400 text-xs p-2.5 rounded-xl font-bold flex justify-between items-center">
+                                    <span>Nested Object</span>
+                                    <span class="text-[9px] opacity-70">Expand to map properties</span>
+                                </div>
                             {:else}
                                 <div class="w-full bg-slate-900/30 border border-slate-800/50 text-slate-600 text-sm p-2.5 rounded-xl italic">
                                     Not mapped
@@ -323,61 +508,149 @@
                             <p class="text-xs text-slate-400 italic leading-relaxed">{attr.description}</p>
                         {/if}
 
-                        {#if attr.observable !== undefined || mappings[attr.name]?.isObservableOverride}
-                            <div class="space-y-3 pt-2">
+                        {@render observableConfig(attr.name, attr, mappings[attr.name])}
+
+                        {#if ocsfData?.classes[attr.type]}
+                            <div class="space-y-4 pt-2">
                                 <div class="flex items-center justify-between">
-                                    <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Observable Configuration</label>
-                                    <label class="flex items-center gap-2 cursor-pointer">
-                                        <input 
-                                            type="checkbox" 
-                                            checked={mappings[attr.name]?.isObservableOverride || false}
-                                            on:change={(e) => {
-                                                if (!mappings[attr.name]) mappings[attr.name] = { enumMapping: {} };
-                                                mappings[attr.name].isObservableOverride = e.currentTarget.checked;
-                                                if (e.currentTarget.checked && mappings[attr.name].observableTypeId === undefined) {
-                                                    mappings[attr.name].observableTypeId = attr.observable;
-                                                }
-                                                mappings = { ...mappings };
-                                                handleChange();
-                                            }}
-                                            class="w-3.5 h-3.5 rounded border-slate-700 bg-slate-950 text-blue-600 focus:ring-blue-500"
-                                        />
-                                        <span class="text-[10px] text-slate-400">Override Automated Observable</span>
+                                    <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                                        {attr.is_array ? 'Array of Objects' : 'Object Properties'}: {attr.caption}
                                     </label>
-                                </div>
-                                <div class="flex items-center gap-3 bg-slate-900/50 p-3 rounded-xl border border-slate-800/50">
-                                    <div class="flex-1">
-                                        <div class="text-[10px] text-slate-500 mb-1">Observable Type</div>
-                                        <select 
-                                            value={mappings[attr.name]?.observableTypeId}
-                                            on:change={(e) => {
-                                                if (!mappings[attr.name]) mappings[attr.name] = { enumMapping: {} };
-                                                mappings[attr.name].observableTypeId = e.currentTarget.value ? Number(e.currentTarget.value) : undefined;
-                                                mappings = { ...mappings };
-                                                handleChange();
+                                    {#if attr.is_array}
+                                        <button 
+                                            on:click={() => { 
+                                                instanceCounts[attr.name] = (instanceCounts[attr.name] || 0) + 1; 
+                                                instanceCounts = instanceCounts;
+                                                handleChange(); 
                                             }}
-                                            disabled={!mappings[attr.name]?.isObservableOverride}
-                                            class="w-full bg-slate-950 border border-slate-800 text-xs p-2 rounded-lg outline-none text-slate-300 focus:ring-1 focus:ring-blue-500 transition-all disabled:opacity-50"
+                                            class="text-[9px] bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 px-2 py-1 rounded border border-blue-500/30 font-bold transition-all"
                                         >
-                                            <option value="">Disabled / None</option>
-                                            {#if ocsfData?.types}
-                                                {#each Object.entries(ocsfData.types).filter(([_, t]) => t.observable !== undefined).sort((a,b) => a[1].caption.localeCompare(b[1].caption)) as [tName, tInfo]}
-                                                    <option value={tInfo.observable}>{tInfo.caption} ({tInfo.observable})</option>
-                                                {/each}
-                                            {:else if attr.observable !== undefined}
-                                                 <option value={attr.observable}>Default ({attr.observable})</option>
-                                            {/if}
-                                            <option value={99}>Other (99)</option>
-                                            <option value={0}>Unknown (0)</option>
-                                        </select>
-                                    </div>
-                                    <div class="bg-slate-950 px-4 py-2 rounded-lg border border-slate-800">
-                                        <div class="text-[9px] text-slate-600 uppercase font-bold mb-1">Status</div>
-                                        <div class="text-[11px] font-mono {(mappings[attr.name]?.isObservableOverride ? (mappings[attr.name]?.observableTypeId !== undefined) : (attr.observable !== undefined)) ? 'text-emerald-500' : 'text-slate-500'}">
-                                            {(mappings[attr.name]?.isObservableOverride ? (mappings[attr.name]?.observableTypeId !== undefined ? 'Overridden' : 'Disabled') : (attr.observable !== undefined ? 'Automated' : 'None'))}
+                                            + Add Object Instance
+                                        </button>
+                                    {/if}
+                                </div>
+
+                                {#each getInstanceIndices(attr.name, attr.is_array) as idx}
+                                    <div class="bg-slate-900/40 border border-slate-800/50 rounded-xl p-3 space-y-3">
+                                        {#if attr.is_array}
+                                            <div class="flex items-center justify-between mb-1 border-b border-slate-800/50 pb-2">
+                                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                                    <span class="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                                                    Instance {idx === '' ? '(Auto-Loop / All)' : `#${idx}`}
+                                                </span>
+                                                {#if idx !== ''}
+                                                     <button 
+                                                        on:click={() => removeInstance(attr.name, idx)}
+                                                        class="text-[9px] text-red-500 hover:text-red-400 font-bold uppercase tracking-tighter transition-colors"
+                                                     >
+                                                        Remove
+                                                     </button>
+                                                {/if}
+                                            </div>
+                                        {/if}
+                                        <div class="grid grid-cols-1 gap-2">
+                                            {#each Object.values(ocsfData.classes[attr.type].attributes).sort((a,b) => (a.requirement === 'required' ? -1 : 1)) as subAttr}
+                                                {@const subPath = idx === null ? `${attr.name}.${subAttr.name}` : `${attr.name}[${idx}].${subAttr.name}`}
+                                                {@const subM = mappings[subPath]}
+                                                {@const subDm = defaultMappings[subPath]}
+                                                {@const isSubInherited = !isDefault && !subM?.sourceField && subM?.staticValue === undefined && subDm}
+                                                {@const subEffective = isSubInherited ? subDm : subM}
+                                                {@const subTypeIdFromSchema = subAttr.observable ?? OCSF_TYPE_TO_OBSERVABLE[subAttr.type]}
+                                                {@const subEffectiveObsId = subEffective?.isObservableOverride ? subEffective.observableTypeId : subTypeIdFromSchema}
+                                                
+                                                <div class="flex flex-col py-2 border-b border-slate-800/50 last:border-0 gap-2">
+                                                    <div class="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                                                        <div class="flex-1 min-w-0">
+                                                            <div class="flex items-center gap-2">
+                                                                <span class="text-[11px] font-bold text-slate-300">{subAttr.caption}</span>
+                                                                {#if subAttr.requirement === 'required'}
+                                                                    <span class="text-[8px] text-red-500 font-bold uppercase">Req</span>
+                                                                {/if}
+                                                                <span class="text-[9px] text-slate-500 font-mono">{subAttr.name}</span>
+                                                                 
+                                                                {#if subEffectiveObsId !== undefined}
+                                                                    <span 
+                                                                        class="px-1.5 py-0.5 text-[7px] uppercase font-black rounded border flex items-center gap-1
+                                                                        {subEffective?.isObservableOverride ? 'bg-purple-900/20 text-purple-400 border-purple-900/30' : 'bg-emerald-900/20 text-emerald-500 border-emerald-900/30'}
+                                                                        {!subEffective?.sourceField && subEffective?.staticValue === undefined ? 'opacity-40 grayscale' : ''}" 
+                                                                        title="{subEffective?.isObservableOverride ? 'Manual' : 'Automated'} Observable: {getObservableTypeName(subEffectiveObsId)} (ID: {subEffectiveObsId})"
+                                                                    >
+                                                                        Obs
+                                                                    </span>
+                                                                {/if}
+                                                            </div>
+                                                        </div>
+                                                        <div class="flex items-center gap-2 w-full sm:w-auto">
+                                                            <div class="flex bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+                                                                <button 
+                                                                    on:click={() => setSourceType(subPath, 'none', subAttr)}
+                                                                    class="px-2 py-1 text-[9px] font-bold rounded transition-all {!subM?.sourceField && subM?.staticValue === undefined ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}"
+                                                                >
+                                                                    {isDefault ? 'None' : 'Inh'}
+                                                                </button>
+                                                                <button 
+                                                                    on:click={() => setSourceType(subPath, 'field', subAttr)}
+                                                                    class="px-2 py-1 text-[9px] font-bold rounded transition-all {subM?.sourceField ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'} disabled:opacity-30"
+                                                                    disabled={getCompatibleFields(subAttr).length === 0}
+                                                                    title={getCompatibleFields(subAttr).length === 0 ? "No compatible fields" : ""}
+                                                                >
+                                                                    Field
+                                                                </button>
+                                                                <button 
+                                                                    on:click={() => setSourceType(subPath, 'static', subAttr)}
+                                                                    class="px-2 py-1 text-[9px] font-bold rounded transition-all {subM?.staticValue !== undefined ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}"
+                                                                >
+                                                                    Static
+                                                                </button>
+                                                            </div>
+
+                                                            <div class="w-32">
+                                                                {#if subEffective?.sourceField}
+                                                                    <select 
+                                                                        value={subM?.sourceField || ''}
+                                                                        on:change={(e) => {
+                                                                            if (!mappings[subPath]) mappings[subPath] = { enumMapping: {} };
+                                                                            mappings[subPath].sourceField = e.currentTarget.value;
+                                                                            mappings = { ...mappings };
+                                                                            handleChange();
+                                                                        }}
+                                                                        disabled={isSubInherited}
+                                                                        class="w-full bg-slate-950 border border-slate-800 text-[10px] p-1.5 rounded-lg outline-none text-slate-300 focus:ring-1 focus:ring-blue-500 {isSubInherited ? 'opacity-50' : ''}"
+                                                                    >
+                                                                        {#each getCompatibleFields(subAttr) as sf}
+                                                                            <option value={sf.name}>{sf.name}</option>
+                                                                        {/each}
+                                                                    </select>
+                                                                {:else if subEffective?.staticValue !== undefined}
+                                                                    <input 
+                                                                        type="text"
+                                                                        value={subM?.staticValue || ''}
+                                                                        on:input={(e) => {
+                                                                            if (!mappings[subPath]) mappings[subPath] = { enumMapping: {} };
+                                                                            mappings[subPath].staticValue = e.currentTarget.value;
+                                                                            mappings = { ...mappings };
+                                                                            handleChange();
+                                                                        }}
+                                                                        disabled={isSubInherited}
+                                                                        placeholder="Static..."
+                                                                        class="w-full bg-slate-950 border border-slate-800 text-[10px] p-1.5 rounded-lg outline-none text-slate-300 focus:ring-1 focus:ring-purple-500 {isSubInherited ? 'opacity-50' : ''}"
+                                                                    />
+                                                                {/if}
+                                                            </div>
+                                                            
+                                                            {#if subEffective?.sourceField && getSourceFieldInfo(subEffective.sourceField)?.example !== undefined}
+                                                                <div class="hidden lg:block text-[9px] text-slate-600 italic max-w-[80px] truncate" title="Ex: {JSON.stringify(getSourceFieldInfo(subEffective.sourceField).example)}">
+                                                                    Ex: {JSON.stringify(getSourceFieldInfo(subEffective.sourceField).example)}
+                                                                </div>
+                                                            {/if}
+                                                        </div>
+                                                    </div>
+                                                    {@render observableConfig(subPath, subAttr, mappings[subPath])}
+                                                </div>
+                                            {/each}
                                         </div>
                                     </div>
-                                </div>
+                                {/each}
                             </div>
                         {/if}
 
@@ -441,21 +714,28 @@
                                                 <svg class="w-3 h-3 text-slate-700 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5-5 5M6 7l5 5-5 5" />
                                                 </svg>
-                                                <select 
-                                                    bind:value={mappings[attr.name].enumMapping[sourceVal]}
-                                                    on:change={handleChange}
-                                                    disabled={isInherited}
-                                                    class="flex-1 bg-slate-950 border border-slate-800 text-[11px] p-2 rounded-lg outline-none text-slate-300 focus:ring-1 focus:ring-blue-500 transition-all"
-                                                >
-                                                    <option value="">
-                                                        {isInherited && inheritedEnumVal ? `Inherit (${inheritedEnumVal})` : '(Ignore)'}
-                                                    </option>
-                                                    {#if attr.enum}
-                                                        {#each Object.entries(attr.enum) as [eVal, eMeta]}
-                                                            <option value={eVal}>{eMeta.caption} ({eVal})</option>
-                                                        {/each}
+                                                <div class="flex-1 space-y-1">
+                                                    <select 
+                                                        bind:value={mappings[attr.name].enumMapping[sourceVal]}
+                                                        on:change={handleChange}
+                                                        disabled={isInherited}
+                                                        class="w-full bg-slate-950 border border-slate-800 text-[11px] p-2 rounded-lg outline-none text-slate-300 focus:ring-1 focus:ring-blue-500 transition-all"
+                                                    >
+                                                        <option value="">
+                                                            {isInherited && inheritedEnumVal ? `Inherit (${inheritedEnumVal})` : '(Ignore)'}
+                                                        </option>
+                                                        {#if attr.enum}
+                                                            {#each Object.entries(attr.enum) as [eVal, eMeta]}
+                                                                <option value={eVal}>{eMeta.caption} ({eVal})</option>
+                                                            {/each}
+                                                        {/if}
+                                                    </select>
+                                                    {#if mappings[attr.name].enumMapping[sourceVal] && attr.enum?.[mappings[attr.name].enumMapping[sourceVal]]?.description}
+                                                        <div class="px-1 text-[9px] text-slate-600 italic leading-tight">
+                                                            {attr.enum[mappings[attr.name].enumMapping[sourceVal]].description}
+                                                        </div>
                                                     {/if}
-                                                </select>
+                                                </div>
                                             </div>
                                         {/each}
 

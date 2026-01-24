@@ -3,8 +3,10 @@ export interface AttributeMapping {
     static?: any;
     enumMapping?: Record<string, string>;
     isEnum?: boolean;
+    isNumber?: boolean;
     observableTypeId?: number;
     isObservableOverride?: boolean;
+    ocsfType?: string;
 }
 
 export interface ConditionalMapping {

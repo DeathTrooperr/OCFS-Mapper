@@ -1,15 +1,32 @@
 import type { ParserConfig, AttributeMapping } from './types';
+import { detectObservableTypeId, OCSF_TYPE_TO_OBSERVABLE, OBSERVABLE_TYPE_NAMES } from './observables';
 
 export function getNestedValue(obj: any, path: string): any {
     if (!obj) return undefined;
     if (!path) return obj;
-    if (path.includes('[]')) {
-        const [arrayPath, elementPath] = path.split('[]');
-        const arr = getNestedValue(obj, arrayPath.endsWith('.') ? arrayPath.slice(0, -1) : arrayPath);
-        if (Array.isArray(arr)) {
-            return arr.map(item => getNestedValue(item, elementPath.startsWith('.') ? elementPath.slice(1) : elementPath));
+    
+    const arrayIndex = path.indexOf('[');
+    if (arrayIndex !== -1) {
+        const closeIndex = path.indexOf(']', arrayIndex);
+        if (closeIndex !== -1) {
+            const arrayPath = path.slice(0, arrayIndex);
+            const indexStr = path.slice(arrayIndex + 1, closeIndex);
+            const rest = path.slice(closeIndex + 1);
+            
+            const arr = getNestedValue(obj, arrayPath.endsWith('.') ? arrayPath.slice(0, -1) : arrayPath);
+            if (Array.isArray(arr)) {
+                const nextPath = rest.startsWith('.') ? rest.slice(1) : rest;
+                if (indexStr === '') {
+                    // Return all elements mapped by rest path
+                    return arr.map(item => getNestedValue(item, nextPath));
+                } else {
+                    // Return specific index
+                    const i = parseInt(indexStr, 10);
+                    return getNestedValue(arr[i], nextPath);
+                }
+            }
+            return undefined;
         }
-        return undefined;
     }
     return path.split('.').reduce((acc, part) => acc && acc[part], obj);
 }
@@ -17,24 +34,54 @@ export function getNestedValue(obj: any, path: string): any {
 export function setNestedValue(obj: any, path: string, value: any) {
     if (value === undefined) return;
     
-    if (path.includes('[]')) {
-        const [arrayPath, elementPath] = path.split('[]');
-        const arrPath = arrayPath.endsWith('.') ? arrayPath.slice(0, -1) : arrayPath;
-        const elemPath = elementPath.startsWith('.') ? elementPath.slice(1) : elementPath;
-        
-        let arr = getNestedValue(obj, arrPath);
-        if (!Array.isArray(arr)) {
-            arr = [];
-            setNestedValue(obj, arrPath, arr);
+    const arrayIndex = path.indexOf('[');
+    if (arrayIndex !== -1) {
+        const closeIndex = path.indexOf(']', arrayIndex);
+        if (closeIndex !== -1) {
+            const arrayPath = path.slice(0, arrayIndex);
+            const indexStr = path.slice(arrayIndex + 1, closeIndex);
+            const rest = path.slice(closeIndex + 1);
+
+            const arrPath = arrayPath.endsWith('.') ? arrayPath.slice(0, -1) : arrayPath;
+            const nextPath = rest.startsWith('.') ? rest.slice(1) : rest;
+            
+            let arr = getNestedValue(obj, arrPath);
+            if (!Array.isArray(arr)) {
+                arr = [];
+                setNestedValue(obj, arrPath, arr);
+            }
+
+            if (indexStr === '') {
+                if (Array.isArray(value)) {
+                    value.forEach((v, i) => {
+                        if (nextPath) {
+                            if (arr[i] === undefined || typeof arr[i] !== 'object') arr[i] = {};
+                            setNestedValue(arr[i], nextPath, v);
+                        } else {
+                            arr[i] = v;
+                        }
+                    });
+                } else {
+                    // Scalar to array mapping: put in first element or broadcast if it makes sense
+                    // For OCSF we usually mean the first element if not specified
+                    if (nextPath) {
+                        if (arr[0] === undefined || typeof arr[0] !== 'object') arr[0] = {};
+                        setNestedValue(arr[0], nextPath, value);
+                    } else {
+                        arr[0] = value;
+                    }
+                }
+            } else {
+                const i = parseInt(indexStr, 10);
+                if (nextPath) {
+                    if (arr[i] === undefined || typeof arr[i] !== 'object') arr[i] = {};
+                    setNestedValue(arr[i], nextPath, value);
+                } else {
+                    arr[i] = value;
+                }
+            }
+            return;
         }
-        
-        if (Array.isArray(value)) {
-            value.forEach((v, i) => {
-                if (!arr[i]) arr[i] = {};
-                setNestedValue(arr[i], elemPath, v);
-            });
-        }
-        return;
     }
 
     const parts = path.split('.');
@@ -103,35 +150,67 @@ export function parseOCSF(input: any, config: ParserConfig): any {
         }
 
         if (val !== undefined && val !== null) {
+            // Apply enum mapping if exists
             if (m.enumMapping && Object.keys(m.enumMapping).length > 0) {
                 if (Array.isArray(val)) {
                     val = val.map(v => {
                         const mapped = m.enumMapping![String(v)];
-                        return (mapped !== undefined && mapped !== '') ? (m.isEnum ? Number(mapped) : mapped) : v;
+                        return (mapped !== undefined && mapped !== '') ? mapped : v;
                     });
                 } else {
                     const mapped = m.enumMapping[String(val)];
-                    val = (mapped !== undefined && mapped !== '') ? (m.isEnum ? Number(mapped) : mapped) : val;
+                    val = (mapped !== undefined && mapped !== '') ? mapped : val;
                 }
             }
+
+            // Auto-casting based on target type metadata
+            if (m.isEnum || m.isNumber) {
+                if (Array.isArray(val)) {
+                    val = val.map(v => (v !== null && v !== '' && !isNaN(Number(v))) ? Number(v) : v);
+                } else {
+                    val = (val !== null && val !== '' && !isNaN(Number(val))) ? Number(val) : val;
+                }
+            }
+
             setNestedValue(output, ocsfPath, val);
 
-            if (m.observableTypeId !== undefined && m.observableTypeId !== null) {
-                if (Array.isArray(val)) {
-                    val.forEach(v => {
-                        observables.push({
-                            name: ocsfPath,
-                            type_id: m.observableTypeId,
-                            value: v
-                        });
-                    });
+            const addObservable = (v: any, path: string, mapping: AttributeMapping) => {
+                if (v === null || v === undefined) return;
+                
+                // Only pull from raw data (source is present) or if it's an explicit override
+                if (mapping.source === undefined && !mapping.isObservableOverride) return;
+
+                let typeId: number | null = null;
+                if (mapping.isObservableOverride) {
+                    typeId = mapping.observableTypeId ?? null;
                 } else {
-                    observables.push({
-                        name: ocsfPath,
-                        type_id: m.observableTypeId,
-                        value: val
-                    });
+                    typeId = mapping.observableTypeId ?? 
+                             (mapping.ocsfType ? OCSF_TYPE_TO_OBSERVABLE[mapping.ocsfType] : null) ??
+                             detectObservableTypeId(v);
                 }
+
+                if (typeId !== null && typeId !== undefined) {
+                    const observable: any = {
+                        name: path,
+                        type_id: typeId,
+                        type: OBSERVABLE_TYPE_NAMES[typeId]
+                    };
+                    
+                    // If it's not an object type, add the value
+                    const isObject = (typeId >= 20 && typeId <= 30) || [17, 18, 31, 32, 33, 34, 35, 38, 39, 40, 41, 43, 44, 47, 48].includes(typeId);
+                    if (!isObject && typeof v !== 'object') {
+                         if (typeof v === 'string' && v === '') return;
+                         observable.value = String(v);
+                    }
+                    
+                    observables.push(observable);
+                }
+            };
+
+            if (Array.isArray(val)) {
+                val.forEach(v => addObservable(v, ocsfPath, m));
+            } else {
+                addObservable(val, ocsfPath, m);
             }
         }
     }
