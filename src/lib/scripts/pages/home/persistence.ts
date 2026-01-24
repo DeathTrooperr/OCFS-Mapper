@@ -23,12 +23,17 @@ function migrateMap(map: any): SavedMap {
         schemaFields: (map.schemaFields || []).map((f: any) => ({
             name: f.name,
             type: f.type,
-            enumValues: f.enumValues || ''
+            enumValues: f.enumValues || '',
+            example: f.example,
+            isObservable: f.isObservable,
+            observableTypeId: f.observableTypeId
         })),
         selectedCategory: map.selectedCategory || '',
         selectedClass: map.selectedClass || '',
         useConditionalClass: !!map.useConditionalClass,
-        mappings: map.mappings || {}
+        mappings: map.mappings || {},
+        currentStep: map.currentStep !== undefined ? map.currentStep : undefined,
+        activeMappingIndex: map.activeMappingIndex || 'default'
     };
 
     // Migrate default mappings from schemaFields to mappings
@@ -37,7 +42,8 @@ function migrateMap(map: any): SavedMap {
             if (f.mappedTo && f.mappedTo !== 'unmapped' && f.mappedTo !== '') {
                 loadedMap.mappings[f.mappedTo] = {
                     sourceField: f.name,
-                    enumMapping: f.enumMapping || {}
+                    enumMapping: f.enumMapping || {},
+                    observableTypeId: f.observableTypeId
                 };
             }
         });
@@ -55,7 +61,8 @@ function migrateMap(map: any): SavedMap {
                         if (sf.mappedTo && sf.mappedTo !== 'unmapped' && sf.mappedTo !== '') {
                             condMappings[sf.mappedTo] = {
                                 sourceField: sf.name,
-                                enumMapping: sf.enumMapping || {}
+                                enumMapping: sf.enumMapping || {},
+                                observableTypeId: sf.observableTypeId
                             };
                         }
                     });
@@ -79,7 +86,8 @@ function migrateMap(map: any): SavedMap {
                         if (sf.mappedTo && sf.mappedTo !== 'unmapped' && sf.mappedTo !== '') {
                             condMappings[sf.mappedTo] = {
                                 sourceField: sf.name,
-                                enumMapping: sf.enumMapping || {}
+                                enumMapping: sf.enumMapping || {},
+                                observableTypeId: sf.observableTypeId
                             };
                         }
                     });
@@ -102,7 +110,8 @@ function migrateMap(map: any): SavedMap {
                         if (sf.mappedTo && sf.mappedTo !== 'unmapped' && sf.mappedTo !== '') {
                             condMappings[sf.mappedTo] = {
                                 sourceField: sf.name,
-                                enumMapping: sf.enumMapping || {}
+                                enumMapping: sf.enumMapping || {},
+                                observableTypeId: sf.observableTypeId
                             };
                         }
                     });

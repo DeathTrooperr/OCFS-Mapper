@@ -1,5 +1,5 @@
 import type { ParserConfig, AttributeMapping } from './types';
-import { detectObservableTypeId, OCSF_TYPE_TO_OBSERVABLE, OBSERVABLE_TYPE_NAMES } from './observables';
+import { OBSERVABLE_TYPE_NAMES } from './observables';
 
 export function getNestedValue(obj: any, path: string): any {
     if (!obj) return undefined;
@@ -127,7 +127,7 @@ export function parseOCSF(input: any, config: ParserConfig): any {
         // Handle automatic mappings
         if (m.source === '' && m.static === undefined) {
             if (ocsfPath === 'raw_data') {
-                val = inputStr;
+                val = input;
             } else if (ocsfPath === 'raw_data_hash') {
                 // Simple hash for demonstration
                 let hash = 0;
@@ -183,15 +183,13 @@ export function parseOCSF(input: any, config: ParserConfig): any {
                 if (v === null || v === undefined) return;
                 
                 // Only pull from raw data (source is present)
-                if (mapping.source === undefined) return;
+                if (!mapping.source) return;
 
-                const typeId = mapping.observableTypeId ?? 
-                               (mapping.ocsfType ? OCSF_TYPE_TO_OBSERVABLE[mapping.ocsfType] : null) ??
-                               detectObservableTypeId(v, mapping.source);
+                const typeId = mapping.observableTypeId;
 
                 if (typeId !== null && typeId !== undefined) {
                     const observable: any = {
-                        name: path,
+                        name: `raw_data.${mapping.source}`,
                         type_id: typeId,
                         type: OBSERVABLE_TYPE_NAMES[typeId]
                     };

@@ -132,7 +132,9 @@
             selectedClass,
             useConditionalClass,
             mappings,
-            classDeterminingFields
+            classDeterminingFields,
+            currentStep,
+            activeMappingIndex
         });
         
         // Update current name and ID from the saved map (it might have been auto-named or assigned a new ID)
@@ -161,9 +163,11 @@
         mappings = map.mappings || {};
         classDeterminingFields = map.classDeterminingFields;
         
-        // Reset state for the loaded map
-        activeMappingIndex = 'default';
-        if (!isInitialLoad) {
+        // Restore state for the loaded map
+        activeMappingIndex = map.activeMappingIndex || 'default';
+        if (map.currentStep !== undefined) {
+            currentStep = map.currentStep;
+        } else if (!isInitialLoad) {
             currentStep = schemaFields.length > 0 ? 1 : 0;
         }
 
@@ -202,7 +206,7 @@
     let autoSaveTimer: any;
     $: if (!isInitialLoad && typeof window !== 'undefined' && currentStep >= 1 && (jsonInput || schemaFields.length > 0)) {
         // Dependency tracking for auto-save
-        jsonInput; schemaFields; selectedCategory; selectedClass; useConditionalClass; classDeterminingFields; mappings;
+        jsonInput; schemaFields; selectedCategory; selectedClass; useConditionalClass; classDeterminingFields; mappings; currentStep; activeMappingIndex;
         
         if (autoSaveTimer) clearTimeout(autoSaveTimer);
         autoSaveTimer = setTimeout(() => {
@@ -211,86 +215,88 @@
     }
 </script>
 
-<main class="h-screen w-full bg-slate-950 text-slate-200 font-sans selection:bg-blue-500/30 flex flex-col overflow-hidden">
-    <div class="flex-none p-4 md:p-8 pb-0">
-        <Header 
-            bind:currentMapName 
-            {currentMapId}
-            {recentMaps} 
-            onSave={saveCurrentMap}
-            onLoad={loadMap}
-            onDelete={deleteMap}
-            onClear={clearCurrentMap}
-            onShowAI={() => showPromptModal = true}
-            enableAI={ENABLE_AI_ASSISTANT}
-        />
+<main class="h-dvh w-full bg-slate-950 text-slate-200 font-sans selection:bg-blue-500/30 flex flex-col overflow-hidden">
+    <div class="flex-1 flex flex-col min-h-0 max-w-7xl w-full mx-auto overflow-hidden">
+        <div class="flex-none p-4 md:p-8 pb-0">
+            <Header 
+                bind:currentMapName 
+                {currentMapId}
+                {recentMaps} 
+                onSave={saveCurrentMap}
+                onLoad={loadMap}
+                onDelete={deleteMap}
+                onClear={clearCurrentMap}
+                onShowAI={() => showPromptModal = true}
+                enableAI={ENABLE_AI_ASSISTANT}
+            />
 
-        <StepWizard 
-            {currentStep} 
-            {steps} 
-            onStepClick={(s) => currentStep = s}
-        />
-    </div>
+            <StepWizard 
+                {currentStep} 
+                {steps} 
+                onStepClick={(s) => currentStep = s}
+            />
+        </div>
 
-    <div class="flex-1 overflow-y-auto p-4 md:p-8 pt-2 md:pt-4 min-h-0">
-        <div class="w-full mx-auto h-full flex flex-col">
-            <div class="flex-1">
-                {#if currentStep === 0}
-                    <JSONInputStep bind:jsonInput enableAI={ENABLE_AI_ASSISTANT} />
-                {:else if currentStep === 1}
-                    <SourceFieldsStep bind:schemaFields />
-                {:else if currentStep === 2}
-                    <OCSFMappingStep 
-                        {data}
-                        bind:schemaFields
-                        bind:useConditionalClass
-                        bind:classDeterminingFields
-                        bind:mappings
-                        bind:selectedCategory
-                        bind:selectedClass
-                        bind:activeMappingIndex
-                    />
-                {:else if currentStep === 3}
-                    <TestingStep config={parserConfig} />
-                {:else if currentStep === 4}
-                    <ExportStep 
-                        bind:generatedCode 
-                        onGenerate={handleGenerateCode} 
-                    />
-                {:else if currentStep === 5}
-                    <DownloadStep 
-                        {generatedCode}
-                        {generatedTypes}
-                    />
-                {/if}
+        <div class="flex-1 overflow-hidden p-4 md:p-8 pt-2 md:pt-4 min-h-0">
+            <div class="w-full h-full flex flex-col">
+                <div class="flex-1 min-h-0">
+                    {#if currentStep === 0}
+                        <JSONInputStep bind:jsonInput enableAI={ENABLE_AI_ASSISTANT} />
+                    {:else if currentStep === 1}
+                        <SourceFieldsStep bind:schemaFields />
+                    {:else if currentStep === 2}
+                        <OCSFMappingStep 
+                            {data}
+                            bind:schemaFields
+                            bind:useConditionalClass
+                            bind:classDeterminingFields
+                            bind:mappings
+                            bind:selectedCategory
+                            bind:selectedClass
+                            bind:activeMappingIndex
+                        />
+                    {:else if currentStep === 3}
+                        <TestingStep config={parserConfig} />
+                    {:else if currentStep === 4}
+                        <ExportStep 
+                            bind:generatedCode 
+                            onGenerate={handleGenerateCode} 
+                        />
+                    {:else if currentStep === 5}
+                        <DownloadStep 
+                            {generatedCode}
+                            {generatedTypes}
+                        />
+                    {/if}
+                </div>
             </div>
         </div>
-    </div>
 
-    <div class="flex-none p-4 md:p-6 border-t border-slate-800 bg-slate-950/50 backdrop-blur-sm">
-        <div class="flex justify-between items-center max-w-full">
-            <button 
-                on:click={() => currentStep = Math.max(0, currentStep - 1)}
-                class="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-400 font-bold rounded-xl transition-all disabled:opacity-0"
-                disabled={currentStep === 0}
-            >
-                Back
-            </button>
-            
-            <button 
-                on:click={() => {
-                    if (currentStep === 0) {
-                        handleParseSchema();
-                    } else {
-                        if (currentStep === 3) handleGenerateCode();
-                        currentStep = Math.min(steps.length - 1, currentStep + 1);
-                    }
-                }}
-                class="px-10 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-900/20 disabled:opacity-0"
-                disabled={currentStep === steps.length - 1 || (currentStep === 0 && !jsonInput.trim())}
-            >
-                {currentStep === 0 ? 'Process JSON' : (currentStep === steps.length - 2 ? 'Finish & Export' : 'Next Step')}
-            </button>
+        <div class="flex-none p-4 md:p-6 border-t border-slate-800 bg-slate-950/50 backdrop-blur-sm">
+            <div class="flex justify-between items-center max-w-full">
+                <button 
+                    on:click={() => currentStep = Math.max(0, currentStep - 1)}
+                    class="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-400 font-bold rounded-xl transition-all disabled:opacity-0"
+                    disabled={currentStep === 0}
+                >
+                    Back
+                </button>
+                
+                <button 
+                    on:click={() => {
+                        if (currentStep === 0) {
+                            handleParseSchema();
+                        } else {
+                            if (currentStep === 3) handleGenerateCode();
+                            currentStep = Math.min(steps.length - 1, currentStep + 1);
+                        }
+                    }}
+                    class="px-10 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-900/20 disabled:opacity-0"
+                    disabled={currentStep === steps.length - 1 || (currentStep === 0 && !jsonInput.trim())}
+                >
+                    {currentStep === 0 ? 'Process JSON' : (currentStep === steps.length - 2 ? 'Finish & Export' : 'Next Step')}
+                </button>
+            </div>
         </div>
     </div>
 </main>

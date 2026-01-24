@@ -37,6 +37,8 @@ export interface SavedMap {
     mappings: Record<string, AttributeMapping>;
     useConditionalClass: boolean;
     classDeterminingFields: DeterminingField[];
+    currentStep?: number;
+    activeMappingIndex?: { fieldIdx: number, mappingIdx: number } | 'default';
     // Legacy fields for migration
     classMappings?: any[];
     classDeterminingField?: string;

@@ -89,13 +89,13 @@
             </label>
         </div>
         
-        <div class="flex-1 flex overflow-hidden">
+        <div class="flex-1 flex flex-col lg:flex-row overflow-hidden">
             <!-- Sidebar for Configuration -->
-            <div class="w-80 border-r border-slate-800 bg-slate-950/30 flex flex-col overflow-y-auto p-6 space-y-6">
+            <div class="w-full lg:w-80 flex-none border-b lg:border-b-0 lg:border-r border-slate-800 bg-slate-950/30 flex flex-col overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6 h-64 lg:h-full">
                 <div class="space-y-4">
                     <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Target Configuration</h3>
                     
-                    <div class="space-y-3">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
                         <div class="space-y-1.5">
                             <label class="text-[10px] font-bold text-slate-600 uppercase tracking-widest block">{useConditionalClass ? 'Default Category' : 'Category'}</label>
                             <select 
@@ -164,7 +164,7 @@
                                                     </button>
                                                 </div>
                                                 
-                                                <div class="space-y-2">
+                                                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2">
                                                     {#each field.mappings as mapping, mappingIdx}
                                                         {@const determiningField = schemaFields.find(f => f.name === field.name)}
                                                         <div class="bg-slate-950 border border-slate-800 p-2 rounded-lg relative group { (typeof activeMappingIndex === 'object' && activeMappingIndex.fieldIdx === idx && activeMappingIndex.mappingIdx === mappingIdx) ? 'ring-1 ring-blue-500 shadow-lg' : ''}">
@@ -251,7 +251,7 @@
             </div>
 
             <!-- Main Mapping Area -->
-            <div class="flex-1 min-w-0 bg-slate-950/50 flex flex-col">
+            <div class="flex-1 min-w-0 bg-slate-950/50 flex flex-col overflow-hidden">
                 {#if currentClass}
                     <div class="flex-1 min-h-0">
                         <FieldMappingTable 
@@ -266,14 +266,14 @@
                         />
                     </div>
                 {:else}
-                    <div class="h-full flex flex-col items-center justify-center p-12 text-center animate-in fade-in zoom-in-95 duration-500">
-                        <div class="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center mb-4 border border-slate-800 shadow-xl">
-                            <svg class="w-8 h-8 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <div class="h-full flex flex-col items-center justify-center p-8 md:p-12 text-center animate-in fade-in zoom-in-95 duration-500">
+                        <div class="w-12 h-12 md:w-16 md:h-16 bg-slate-900 rounded-2xl flex items-center justify-center mb-4 border border-slate-800 shadow-xl">
+                            <svg class="w-6 h-6 md:w-8 md:h-8 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                             </svg>
                         </div>
-                        <h3 class="text-lg font-bold text-white mb-2">No Target Class Selected</h3>
-                        <p class="text-slate-400 max-w-xs text-sm">Select an OCSF category and class from the sidebar to begin mapping your fields.</p>
+                        <h3 class="text-base md:text-lg font-bold text-white mb-2">No Target Class Selected</h3>
+                        <p class="text-slate-400 max-w-xs text-xs md:text-sm mx-auto">Select an OCSF category and class from the sidebar to begin mapping your fields.</p>
                     </div>
                 {/if}
             </div>
