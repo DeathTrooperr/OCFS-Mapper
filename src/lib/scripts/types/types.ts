@@ -76,3 +76,28 @@ export interface OCSFSchemaData {
     types: Record<string, any>;
     profiles: Record<string, any>;
 }
+
+export interface OCSFVersion {
+    version: string;
+    url: string;
+}
+
+export interface OCSFVersionsResponse {
+    default: OCSFVersion;
+    versions: OCSFVersion[];
+}
+
+export interface OCSFValidationError {
+    error: string;
+    message: string;
+    [key: string]: any;
+}
+
+export interface OCSFValidationResponse {
+    error?: string;
+    error_count: number;
+    errors: OCSFValidationError[];
+    uid: string;
+    warning_count: number;
+    warnings: OCSFValidationError[];
+}

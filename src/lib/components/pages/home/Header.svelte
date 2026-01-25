@@ -1,4 +1,6 @@
 <script lang="ts">
+    import type { OCSFVersion, OCSFVersionsResponse } from '$lib/scripts/types/types';
+
     export let currentMapName: string;
     export let currentMapId: string;
     export let recentMaps: any[];
@@ -8,10 +10,14 @@
     export let onClear: () => void;
     export let onShowAI: () => void;
     export let enableAI = false;
+    export let versions: OCSFVersionsResponse | null = null;
+    export let currentVersion: OCSFVersion | null = null;
+    export let onVersionChange: (version: OCSFVersion) => void;
 
     let showSavedIndicator = false;
     let indicatorTimer: any;
     let showDropdown = false;
+    let showVersionDropdown = false;
 
     function handleSave() {
         onSave();
@@ -69,6 +75,42 @@
                 <span class="hidden sm:inline">AI Assist</span>
                 <span class="sm:hidden">AI</span>
             </button>
+        {/if}
+
+        {#if versions}
+            <div class="relative" use:clickOutside on:click_outside={() => showVersionDropdown = false}>
+                <button 
+                    on:click={() => showVersionDropdown = !showVersionDropdown}
+                    class="px-3 md:px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] md:text-xs font-bold rounded-xl transition-all border border-slate-700 flex items-center gap-2"
+                >
+                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    </svg>
+                    <span>OCSF {currentVersion?.version || 'Version'}</span>
+                    <svg class="w-3 h-3 transition-transform {showVersionDropdown ? 'rotate-180' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                </button>
+
+                {#if showVersionDropdown}
+                    <div class="absolute top-full right-0 mt-2 w-48 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden py-1 animate-in fade-in zoom-in-95 duration-100">
+                        {#each versions.versions as v}
+                            <button 
+                                on:click={() => {
+                                    onVersionChange(v);
+                                    showVersionDropdown = false;
+                                }}
+                                class="w-full text-left px-4 py-2 text-xs {currentVersion?.version === v.version ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'} transition-colors flex items-center justify-between"
+                            >
+                                <span>{v.version}</span>
+                                {#if v.version === versions.default.version}
+                                    <span class="text-[8px] px-1.5 py-0.5 bg-slate-800 rounded uppercase font-bold text-slate-500">Default</span>
+                                {/if}
+                            </button>
+                        {/each}
+                    </div>
+                {/if}
+            </div>
         {/if}
 
         <button 

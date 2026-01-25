@@ -23,11 +23,7 @@ export function isTypeCompatible(attr: OCSFAttribute, schemaField: SchemaField):
     // Don't allow mapping object to scalar or vice-versa
     if (isSourceObject !== isAttrObject) return false;
 
-    // For arrays of objects, we disable top-level mapping in the UI, 
-    // so we return false here to hide it from the "Field" dropdown.
-    if (isAttrArray && isAttrObject) return false;
-
-    // For all other combinations (scalar to scalar, scalar to array, array to array), allow it.
+    // For arrays of objects, we allow top-level mapping now.
     // This satisfies the requirement: "unless the value is some form of array or sub object or array allow any value to be selected"
     return true;
 }
@@ -191,6 +187,24 @@ export function getMappingsForClass(
     if (!targetClass) return result;
 
     const allPaths = new Set([...Object.keys(mappings), ...Object.keys(baseMappings || {})]);
+
+    const addPathsRecursively = (cls: any, prefix = '') => {
+        if (!cls || !cls.attributes) return;
+        Object.keys(cls.attributes).forEach(attrName => {
+            if (attrName.startsWith('$')) return;
+            const path = prefix ? `${prefix}.${attrName}` : attrName;
+            allPaths.add(path);
+            const attr = cls.attributes[attrName];
+            if (ocsfData?.classes[attr.type]) {
+                // To prevent infinite recursion in case of circular references (rare in OCSF but possible)
+                if (!prefix.includes(attrName)) {
+                    addPathsRecursively(ocsfData.classes[attr.type], path);
+                }
+            }
+        });
+    };
+    addPathsRecursively(targetClass);
+
     const mappedSources = new Set<string>();
 
     const resolveAttr = (path: string): OCSFAttribute | undefined => {
@@ -222,6 +236,13 @@ export function getMappingsForClass(
         let effectiveStatic = m?.staticValue;
         let effectiveEnumMapping = m?.enumMapping ? { ...m.enumMapping } : undefined;
 
+        const targetAttr = resolveAttr(path);
+        const enumOptions = targetAttr?.enum ? Object.keys(targetAttr.enum) : [];
+        
+        if (!effectiveSource && effectiveStatic === undefined && enumOptions.length === 1) {
+            effectiveStatic = enumOptions[0];
+        }
+
         if (!effectiveSource && effectiveStatic === undefined && bm) {
             effectiveSource = bm.sourceField;
             effectiveStatic = bm.staticValue;
@@ -230,7 +251,6 @@ export function getMappingsForClass(
 
         if (effectiveSource || effectiveStatic !== undefined) {
             if (effectiveSource) mappedSources.add(effectiveSource);
-            const targetAttr = resolveAttr(path);
             const isEnum = !!(targetAttr && targetAttr.enum);
             const isNumber = !!(targetAttr && ['integer_t', 'long_t', 'float_t', 'double_t', 'timestamp_t'].includes(targetAttr.type));
             

@@ -9,7 +9,9 @@
     import ExportStep from "$lib/components/pages/home/ExportStep.svelte";
     import DownloadStep from "$lib/components/pages/home/DownloadStep.svelte";
     import AIModal from "$lib/components/pages/home/AIModal.svelte";
-    import type { DeterminingField, SchemaField, SavedMap, ClassMapping, OCSFSchemaData, OCSFClass, OCSFCategory, AttributeMapping } from "$lib/scripts/types/types";
+    import LoadingOverlay from "$lib/components/common/LoadingOverlay.svelte";
+    import VersionSelectorOverlay from "$lib/components/common/VersionSelectorOverlay.svelte";
+    import type { DeterminingField, SchemaField, SavedMap, ClassMapping, OCSFSchemaData, OCSFClass, OCSFCategory, AttributeMapping, OCSFVersion, OCSFVersionsResponse } from "$lib/scripts/types/types";
     import { parseSchema, generateCodeSnippet, prepareParserConfig } from "$lib/scripts/pages/home/mapping-utils";
     import { generateOCSFPrompt as createOCSFPrompt, parseAIPrompt } from "$lib/scripts/pages/home/ai-utils";
     import { loadRecentMaps, saveMap, deleteMapFromStorage } from "$lib/scripts/pages/home/persistence";
@@ -18,6 +20,38 @@
 
     export let data: PageData;
     $: ocsf = (data as any).ocsf as OCSFSchemaData;
+    $: versions = (data as any).versions;
+    let ocsfVersion = versions?.default;
+    let isLoading = false;
+    let loadingMessage = "Loading OCSF Schema...";
+    let showVersionSelector = false;
+
+    async function handleVersionChange(version: any, isInitial = false) {
+        isLoading = true;
+        loadingMessage = isInitial 
+            ? `Loading OCSF ${version.version}...` 
+            : `Switching to OCSF ${version.version}...`;
+        ocsfVersion = version;
+        
+        // Save to localStorage
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('ocsf_version', JSON.stringify(version));
+        }
+
+        try {
+            const res = await fetch(`/api/ocsf/schema?apiUrl=${encodeURIComponent(version.url)}`);
+            if (res.ok) {
+                const newSchema = await res.json();
+                data.ocsf = newSchema;
+            } else {
+                console.error('Failed to fetch schema for version:', version.version);
+            }
+        } catch (err) {
+            console.error('Error fetching schema:', err);
+        } finally {
+            isLoading = false;
+        }
+    }
 
     $: ENABLE_AI_ASSISTANT = data.enableAI;
 
@@ -78,20 +112,28 @@
     }
 
     function handleParseSchema() {
-        try {
-            schemaFields = parseSchema(jsonInput);
-            
-            classDeterminingFields = classDeterminingFields.map(field => ({
-                ...field,
-                mappings: field.mappings.map((m: ClassMapping) => ({
-                    ...m,
-                    mappings: m.mappings || {}
-                }))
-            }));
-            currentStep = 1;
-        } catch (e: any) {
-            alert(e.message || 'Invalid JSON');
-        }
+        isLoading = true;
+        loadingMessage = "Analyzing schema structure...";
+        
+        // Use a tiny timeout to allow the loading overlay to appear
+        setTimeout(() => {
+            try {
+                schemaFields = parseSchema(jsonInput);
+                
+                classDeterminingFields = classDeterminingFields.map(field => ({
+                    ...field,
+                    mappings: field.mappings.map((m: ClassMapping) => ({
+                        ...m,
+                        mappings: m.mappings || {}
+                    }))
+                }));
+                currentStep = 1;
+            } catch (e: any) {
+                alert(e.message || 'Invalid JSON');
+            } finally {
+                isLoading = false;
+            }
+        }, 50);
     }
 
     function handleGenerateCode() {
@@ -115,6 +157,22 @@
     let currentMapId = '';
 
     onMount(() => {
+        // Check for saved version
+        const savedVersion = localStorage.getItem('ocsf_version');
+        if (savedVersion) {
+            try {
+                const parsed = JSON.parse(savedVersion);
+                if (parsed && parsed.version !== ocsfVersion?.version) {
+                    handleVersionChange(parsed, true);
+                }
+            } catch (e) {
+                console.error('Error parsing saved version:', e);
+                showVersionSelector = true;
+            }
+        } else {
+            showVersionSelector = true;
+        }
+
         recentMaps = loadRecentMaps();
         if (recentMaps.length > 0) {
             loadMap(recentMaps[0]);
@@ -228,6 +286,9 @@
                 onClear={clearCurrentMap}
                 onShowAI={() => showPromptModal = true}
                 enableAI={ENABLE_AI_ASSISTANT}
+                {versions}
+                currentVersion={ocsfVersion}
+                onVersionChange={handleVersionChange}
             />
 
             <StepWizard 
@@ -256,7 +317,7 @@
                             bind:activeMappingIndex
                         />
                     {:else if currentStep === 3}
-                        <TestingStep config={parserConfig} />
+                        <TestingStep config={parserConfig} apiUrl={ocsfVersion?.url} />
                     {:else if currentStep === 4}
                         <ExportStep 
                             bind:generatedCode 
@@ -308,5 +369,19 @@
         bind:aiInput={aiPromptInput}
         onApply={parseAIPromptHandler}
         onClose={() => showPromptModal = false}
+    />
+{/if}
+
+{#if isLoading}
+    <LoadingOverlay message={loadingMessage} />
+{/if}
+
+{#if showVersionSelector && versions}
+    <VersionSelectorOverlay 
+        {versions} 
+        onSelect={(v) => {
+            showVersionSelector = false;
+            handleVersionChange(v, true);
+        }} 
     />
 {/if}

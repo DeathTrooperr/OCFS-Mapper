@@ -21,41 +21,6 @@ export const OBSERVABLE_PATTERNS: ObservablePattern[] = [
     { typeId: 46, name: 'Registry Key', regex: /^(HKEY_LOCAL_MACHINE|HKLM|HKEY_CURRENT_USER|HKCU|HKEY_CLASSES_ROOT|HKCR|HKEY_USERS|HKU|HKEY_CURRENT_CONFIG|HKCC)\\.+/i },
     { typeId: 1, name: 'Hostname', regex: /^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$/ },
 ];
-
-export const OCSF_TYPE_TO_OBSERVABLE: Record<string, number> = {
-    'hostname_t': 1,
-    'ip_t': 2,
-    'ipv4_t': 2,
-    'ipv6_t': 2,
-    'mac_t': 3,
-    'user_name_t': 4,
-    'email_t': 5,
-    'url_t': 6,
-    'file_name_t': 7,
-    'hash_t': 8,
-    'process_name_t': 9,
-    'port_t': 11,
-    'subnet_t': 12,
-    'country_code_t': 14,
-    'file_path_t': 45,
-    'registry_key_t': 46,
-    'registry_value_t': 29,
-    // Object types
-    'user': 21,
-    'email': 22,
-    'url': 23,
-    'file': 24,
-    'process': 25,
-    'geo_location': 26,
-    'container': 27,
-    'registry_key': 28,
-    'registry_value': 29,
-    'fingerprint': 30,
-    'endpoint': 20,
-    'device': 47,
-    'network_endpoint': 48
-};
-
 export const OBSERVABLE_TYPE_NAMES: Record<number, string> = {
     0: 'Unknown',
     1: 'Hostname',

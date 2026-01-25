@@ -4,6 +4,8 @@
 declare namespace Cloudflare {
 	interface Env {
 		ASSETS: Fetcher;
+		ENABLE_AI_ASSISTANT: string;
+		OCSF_API_URL: string;
 	}
 }
 interface Env extends Cloudflare.Env {}

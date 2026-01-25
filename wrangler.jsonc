@@ -35,7 +35,8 @@
 	 * https://developers.cloudflare.com/workers/configuration/secrets/
 	 */
 	"vars": {
-		"ENABLE_AI_ASSISTANT": "false"
+		"ENABLE_AI_ASSISTANT": "false",
+		"OCSF_API_URL": "https://schema.ocsf.io"
 	}
 	/**
 	 * Service Bindings (communicate between multiple Workers)
